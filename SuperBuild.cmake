@@ -28,6 +28,7 @@ set( SlicerIGT_Modules
   CreateModels
   UltrasoundSnapshots
   VolumeResliceDriver
+  OpenIGTLinkRemote
   )
 
   
@@ -77,7 +78,9 @@ ExternalProject_Add( ${proj}
     -DUltrasoundSnapshots_SOURCE_DIR:PATH=${UltrasoundSnapshots_SOURCE_DIR}
     -DUltrasoundSnapshots_BINARY_DIR:PATH=${UltrasoundSnapshots_BINARY_DIR}      
     -DVolumeResliceDriver_SOURCE_DIR:PATH=${VolumeResliceDriver_SOURCE_DIR}
-    -DVolumeResliceDriver_BINARY_DIR:PATH=${VolumeResliceDriver_BINARY_DIR}      
+    -DVolumeResliceDriver_BINARY_DIR:PATH=${VolumeResliceDriver_BINARY_DIR}
+    -DOpenIGTLinkRemote_SOURCE_DIR:PATH=${OpenIGTLinkRemote_SOURCE_DIR}
+    -DOpenIGTLinkRemote_BINARY_DIR:PATH=${OpenIGTLinkRemote_BINARY_DIR}        
     -DSlicer_DIR:PATH=${Slicer_DIR}
     -DCTK_DIR:PATH=${CTK_DIR}
     -DQtTesting_DIR:PATH=${QtTesting_DIR}
