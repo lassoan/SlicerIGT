@@ -5,261 +5,415 @@
 // Other MRML includes
 #include "vtkMRMLNode.h"
 
+// VTK includes
+#include <vtkCallbackCommand.h> 
+#include <vtkNew.h>
+#include <vtkObjectFactory.h>
+
 // Other includes
 #include <sstream>
+#include <vector>
 
-std::string getToolLabel(char * toolName)
-{
-  std::string toolAddedName(toolName);
-  if(toolAddedName.size()>6)
-  {
-    return toolAddedName.substr(0,4)+ toolAddedName.substr( toolAddedName.size()-2, toolAddedName.size());
-  }
-  else
-  {
-    return toolAddedName.substr(0,6);
-  }
-}
+static const char WATCHED_NODE_REFERENCE_ROLE_NAME[]="watchedNode";
 
-vtkMRMLWatchdogNode* vtkMRMLWatchdogNode::New()
+vtkMRMLNodeNewMacro(vtkMRMLWatchdogNode); 
+
+//----------------------------------------------------------------------------
+class vtkMRMLWatchdogNode::vtkInternal
 {
-  // First try to create the object from the vtkObjectFactory
-  vtkObject* ret = vtkObjectFactory::CreateInstance( "vtkMRMLWatchdogNode" );
-  if( ret )
+public:
+  vtkInternal();
+
+  struct WatchedNode
+  {
+    std::string displayLabel;
+    vtkSmartPointer<vtkTimerLog> updateTimer; // measures the time since the last update
+    double updateTimeToleranceSec; // if no update is received for more than the tolerance value then the tool is reported as invalid
+    bool playSound;
+    bool lastStateUpToDate; // true if the state was valid at the last update
+
+    WatchedNode()
     {
-      return ( vtkMRMLWatchdogNode* )ret;
+      updateTimer = vtkSmartPointer<vtkTimerLog>::New();
+      playSound=false;
+      updateTimeToleranceSec=1.0;
+      lastStateUpToDate = false;
     }
-  // If the factory was unable to create the object, then create it here.
-  return new vtkMRMLWatchdogNode;
-}
+  };
 
+  std::vector< WatchedNode > WatchedNodes;
+};
+
+vtkMRMLWatchdogNode::vtkInternal::vtkInternal()
+{
+} 
+
+//----------------------------------------------------------------------------
 vtkMRMLWatchdogNode::vtkMRMLWatchdogNode()
 {
+  this->Internal = new vtkInternal;
   this->HideFromEditorsOff();
   this->SetSaveWithScene( true );
+
+  this->Visible = true;
+
+  vtkNew<vtkIntArray> events;
+  events->InsertNextValue(vtkCommand::ModifiedEvent);
+  this->AddNodeReferenceRole(WATCHED_NODE_REFERENCE_ROLE_NAME, WATCHED_NODE_REFERENCE_ROLE_NAME, events.GetPointer());
 }
 
+//----------------------------------------------------------------------------
 vtkMRMLWatchdogNode::~vtkMRMLWatchdogNode()
 {
+  delete this->Internal;
+  this->Internal = NULL;
 }
 
-vtkMRMLNode* vtkMRMLWatchdogNode::CreateNodeInstance()
-{
-  // First try to create the object from the vtkObjectFactory
-  vtkObject* ret = vtkObjectFactory::CreateInstance( "vtkMRMLWatchdogNode" );
-  if( ret )
-    {
-      return ( vtkMRMLWatchdogNode* )ret;
-    }
-  // If the factory was unable to create the object, then create it here.
-  return new vtkMRMLWatchdogNode;
-}
-
+//----------------------------------------------------------------------------
 void vtkMRMLWatchdogNode::WriteXML( ostream& of, int nIndent )
 {
   Superclass::WriteXML(of, nIndent); // This will take care of referenced nodes
   vtkIndent indent(nIndent);
 
-  of << indent << " NumberOfWatchedTools=\"" << this->WatchedTools.size() << "\"";
- int i =1;
-  for (std::list<WatchedTool>::iterator it = this->WatchedTools.begin() ; it != this->WatchedTools.end(); ++it)
+  std::ostringstream displayLabelsAttribute;
+  std::ostringstream playSoundAttribute;
+  std::ostringstream updateTimeToleranceSecAttribute;
+  for (std::vector<vtkMRMLWatchdogNode::vtkInternal::WatchedNode>::iterator
+    it = this->Internal->WatchedNodes.begin(); it != this->Internal->WatchedNodes.end(); ++it)
   {
-    if((*it).tool== NULL)
+    if (it != this->Internal->WatchedNodes.begin())
     {
-      continue;
+      displayLabelsAttribute << ";";
+      playSoundAttribute << ";";
+      updateTimeToleranceSecAttribute << ";";
     }
-    of << indent << " WatchedToolName" << i<<"=\""<<(*it).tool->GetName() << "\"";
-    of << indent << " WatchedToolSoundActivated" << i<<"=\""<< (*it).playSound << "\"";
-    of << indent << " WatchedToolID" << i<<"=\""<< (*it).tool->GetID() << "\"";
-    i++;
+    displayLabelsAttribute << it->displayLabel;
+    playSoundAttribute << (it->playSound ? "true" : "false");
+    updateTimeToleranceSecAttribute << it->updateTimeToleranceSec;
   }
+
+  of << indent << " watchedNodeDisplayLabel=\"" << displayLabelsAttribute.str() << "\"";
+  of << indent << " watchedNodePlaySound=\"" << playSoundAttribute.str() << "\"";
+  of << indent << " watchedNodeUpdateTimeToleranceSec=\"" << updateTimeToleranceSecAttribute.str() << "\"";
 }
 
+//----------------------------------------------------------------------------
 void vtkMRMLWatchdogNode::ReadXMLAttributes( const char** atts )
 {
   Superclass::ReadXMLAttributes(atts); // This will take care of referenced nodes
 
-  // Read all MRML node attributes from two arrays of names and values
-  const char* attName;
-  const char* attValue;
+  int numberOfWatchedNodes = this->GetNumberOfNodeReferences(WATCHED_NODE_REFERENCE_ROLE_NAME);
+  this->Internal->WatchedNodes.resize(numberOfWatchedNodes);
 
+  // Read all MRML node attributes from two arrays of names and values
   while (*atts != NULL)
   {
-    attName  = *(atts++);
-    attValue = *(atts++);
-    if ( ! strcmp( attName, "NumberOfWatchedTools" ) )
+    const char* attName  = *(atts++);
+    const char* attValue = *(atts++);
+    if (!strcmp(attName, "watchedNodeDisplayLabel"))
     {
-      std::stringstream nameString;
-      nameString << attValue;
-      int r = 0;
-      nameString >> r;
-      //vtkDebugMacro("Number of watched tools read "<< r );
-      for (int i =0; i<r; i++)
+      std::stringstream attributes(attValue);
+      std::string attribute;
+      int watchedNodeIndex=0;
+      while (std::getline(attributes, attribute, ';') && watchedNodeIndex<numberOfWatchedNodes)
       {
-        WatchedTool tempWatchedTool;
+        this->Internal->WatchedNodes[watchedNodeIndex].displayLabel = attribute;
+      }
+    }
+    else if (!strcmp(attName, "watchedNodePlaySound"))
+    {
+      std::stringstream attributes(attValue);
+      std::string attribute;
+      int watchedNodeIndex=0;
+      while (std::getline(attributes, attribute, ';') && watchedNodeIndex<numberOfWatchedNodes)
+      {
+        bool playSound = (attribute.compare("true")==0);
+        this->Internal->WatchedNodes[watchedNodeIndex].playSound = playSound;
+      }
+    }
+    else if (!strcmp(attName, "watchedNodeUpdateTimeToleranceSec"))
+    {
+      std::stringstream attributes(attValue);
+      std::string attribute;
+      int watchedNodeIndex=0;
+      while (std::getline(attributes, attribute, ';') && watchedNodeIndex<numberOfWatchedNodes)
+      {
         std::stringstream ss;
-        ss<<"WatchedToolName";
-        ss << i+1;
-        attName  = *(atts++);
-        attValue = *(atts++);
-        vtkDebugMacro("WatchedToolName read "<< ss.str().c_str() << " atName = "<< attName<< " atValue = "<< attValue);
-        if ( ! strcmp( attName, ss.str().c_str() ) )
-        {
-          tempWatchedTool.label=getToolLabel((char *) attValue);
-        }
-        else 
-        {
-          vtkWarningMacro("WatchedToolName read "<< attName<< " different than expected = " << ss.str().c_str() );
-          continue;
-        }
-
-        std::stringstream soundString;
-        soundString<<"WatchedToolSoundActivated";
-        soundString << i+1;
-        attName  = *(atts++);
-        vtkDebugMacro("WatchedToolSoundActivated read "<< soundString.str().c_str() << " atName = " << attName << " atValue = " << attValue);
-        if ( ! strcmp( attName, soundString.str().c_str()) )
-        {
-          attValue = *(atts++);
-
-          std::stringstream ss;
-          ss << attValue;
-          ss>>(tempWatchedTool.playSound);
-          attName  = *(atts++);
-        }
-        else 
-        {
-          vtkWarningMacro("There was not sound activated read "<< attName<< " different than expected = " << soundString.str().c_str() );
-        }
-
-        std::stringstream IdString;
-        IdString<<"WatchedToolID";
-        IdString << i+1;
-        attValue = *(atts++);
-        vtkDebugMacro("WatchedToolID read "<< IdString.str().c_str() << " atName = " << attName << " atValue = " << attValue);
-        if ( ! strcmp( attName, IdString.str().c_str()) )
-        {
-          tempWatchedTool.id=std::string(attValue);
-          this->WatchedTools.push_back(tempWatchedTool);
-        }
-        else 
-        {
-          vtkWarningMacro("WatchedToolID read "<< attName<< " different than expected = " << IdString.str().c_str() );
-          continue;
-        }
+        ss << attribute;
+        double updateTimeToleranceSec=1.0;
+        ss >> updateTimeToleranceSec; 
+        this->Internal->WatchedNodes[watchedNodeIndex].updateTimeToleranceSec = updateTimeToleranceSec;
       }
     }
   }
-  //vtkDebugMacro("XML atts number of tools read "<<GetNumberOfTools());
 }
 
+//----------------------------------------------------------------------------
 void vtkMRMLWatchdogNode::Copy( vtkMRMLNode *anode )
 {  
+  vtkMRMLWatchdogNode* srcNode = vtkMRMLWatchdogNode::SafeDownCast(anode);
+  if (srcNode==NULL)
+  {
+    vtkErrorMacro("vtkMRMLWatchdogNode::Copy failed: expected intput with vtkMRMLWatchdogNode type");
+    return;
+  }
   Superclass::Copy( anode ); // This will take care of referenced nodes
-  vtkMRMLWatchdogNode *node = ( vtkMRMLWatchdogNode* ) anode;
+  this->Internal->WatchedNodes = srcNode->Internal->WatchedNodes;
   this->Modified();
 }
 
+//----------------------------------------------------------------------------
 void vtkMRMLWatchdogNode::PrintSelf( ostream& os, vtkIndent indent )
 {
   vtkMRMLNode::PrintSelf(os,indent); // This will take care of referenced nodes
-  os << indent << "ToolID: ";
-  for (int i=0; i<this->GetNumberOfTools();i++)
+
+  int watchedNodeIndex=0;
+  for (std::vector<vtkMRMLWatchdogNode::vtkInternal::WatchedNode>::iterator
+    it = this->Internal->WatchedNodes.begin(); it != this->Internal->WatchedNodes.end(); ++it)
   {
-    os << indent << this->GetToolNode(i)->tool->GetID() << std::endl;
+    os << indent << "Referenced node ["<<watchedNodeIndex<<"]" << std::endl;
+    const char* nodeId = this->GetNthNodeReferenceID(WATCHED_NODE_REFERENCE_ROLE_NAME, watchedNodeIndex);
+    os << indent << " Node ID: " << (nodeId?nodeId:"(undefined)") << std::endl;
+    os << indent << " DisplayLabel: " << it->displayLabel << std::endl;
+    os << indent << " PlaySound: " << (it->playSound?"true":"false") << std::endl;
+    os << indent << " UpdateTimeToleranceSec: " << it->updateTimeToleranceSec << std::endl;
+    os << indent << " LastStateUpToDate: " << it->lastStateUpToDate << std::endl;
   }
-  
 }
 
-WatchedTool * vtkMRMLWatchdogNode::GetToolNode(int currentRow)
+//----------------------------------------------------------------------------
+int vtkMRMLWatchdogNode::AddWatchedNode(vtkMRMLNode *watchedNode, const char* displayLabel/*=NULL*/,
+                                        double updateTimeToleranceSec/*=-1*/, bool playSound/*=false*/)
 {
-  std::list<WatchedTool>::iterator it = this->WatchedTools.begin();
-  advance (it,currentRow);
-  WatchedTool * watchedTool = &(*it);
-  return watchedTool;
-}
-
-std::list<WatchedTool> * vtkMRMLWatchdogNode::GetToolNodes()
-{
-  return &this->WatchedTools;
-}
-
-int vtkMRMLWatchdogNode::AddToolNode( vtkMRMLDisplayableNode* toolAdded)
-{
-  WatchedTool tempWatchedTool;
-  if(toolAdded==NULL)
+  if (watchedNode==NULL)
   {
+    vtkErrorMacro("vtkMRMLWatchdogNode::AddWatchedNode failed: invalid watched node");
+    return -1;
+  }
+
+  vtkMRMLWatchdogNode::vtkInternal::WatchedNode newWatchedNodeInfo;
+
+  if (displayLabel)
+  {
+    newWatchedNodeInfo.displayLabel = displayLabel;
+  }
+  else
+  {
+    const char* watchedNodeName = watchedNode->GetName();
+    if (watchedNodeName!=NULL)
+    {
+      std::string label = watchedNodeName;
+      newWatchedNodeInfo.displayLabel = label.substr(0,5); // use the first 5 character of the node name as default name
+    }
+  }
+
+  if (updateTimeToleranceSec>0)
+  {
+    newWatchedNodeInfo.updateTimeToleranceSec = updateTimeToleranceSec;
+  }
+
+  newWatchedNodeInfo.playSound = playSound;
+
+  this->Internal->WatchedNodes.push_back(newWatchedNodeInfo);
+  int newNodeIndex = this->Internal->WatchedNodes.size()-1;
+
+  this->SetAndObserveNthNodeReferenceID(WATCHED_NODE_REFERENCE_ROLE_NAME, newNodeIndex, watchedNode->GetID());
+
+  return newNodeIndex;
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLWatchdogNode::RemoveWatchedNode(int watchedNodeIndex)
+{
+  if(watchedNodeIndex<0 || watchedNodeIndex>=this->Internal->WatchedNodes.size())
+  {
+    vtkErrorMacro("vtkMRMLWatchdogNode::RemoveWatchedNode failed: invalid index "<<watchedNodeIndex);
+  }
+  this->Internal->WatchedNodes.erase(this->Internal->WatchedNodes.begin()+watchedNodeIndex);
+  this->RemoveNthNodeReferenceID(WATCHED_NODE_REFERENCE_ROLE_NAME, watchedNodeIndex);
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLWatchdogNode::RemoveAllWatchedNodes()
+{
+  this->Internal->WatchedNodes.clear();
+  this->RemoveNodeReferenceIDs(WATCHED_NODE_REFERENCE_ROLE_NAME);
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLWatchdogNode::SwapWatchedNodes( int watchedNodeIndexA, int watchedNodeIndexB )
+{
+  if(watchedNodeIndexA<0 || watchedNodeIndexA>=this->Internal->WatchedNodes.size())
+  {
+    vtkErrorMacro("vtkMRMLWatchdogNode::RemoveWatchedNode failed: invalid watchedNodeIndexA "<<watchedNodeIndexA);
+  }
+  if(watchedNodeIndexB<0 || watchedNodeIndexB>=this->Internal->WatchedNodes.size())
+  {
+    vtkErrorMacro("vtkMRMLWatchdogNode::RemoveWatchedNode failed: invalid watchedNodeIndexB "<<watchedNodeIndexB);
+  }
+
+  std::vector<vtkMRMLWatchdogNode::vtkInternal::WatchedNode>::iterator itA = this->Internal->WatchedNodes.begin()+watchedNodeIndexA;
+  std::vector<vtkMRMLWatchdogNode::vtkInternal::WatchedNode>::iterator itB = this->Internal->WatchedNodes.begin()+watchedNodeIndexB;
+
+  vtkMRMLWatchdogNode::vtkInternal::WatchedNode watchedNodeInfoTemp = *itA;
+  *itA = *itB;
+  *itB = watchedNodeInfoTemp;
+}
+
+/*
+//----------------------------------------------------------------------------
+int vtkMRMLWatchdogNode::FindWatchedNodeByDisplayLabel(const char* displayLabel);
+{
+for (std::vector<vtkMRMLWatchdogNode::vtkInternal::WatchedNode>::iterator
+it = this->Internal->WatchedNodes.begin(); it != this->Internal->WatchedNodes.end(); ++it)
+{
+if(!strcmp((*it).tool->GetName(), toolName))
+{
+return true;
+}
+}
+return false;
+}
+*/
+
+//----------------------------------------------------------------------------
+int vtkMRMLWatchdogNode::GetNumberOfWatchedNodes()
+{
+  return this->Internal->WatchedNodes.size();
+}
+
+//----------------------------------------------------------------------------
+const char* vtkMRMLWatchdogNode::GetWatchedNodeDisplayLabel(int watchedNodeIndex)
+{
+  if(watchedNodeIndex<0 || watchedNodeIndex>=this->Internal->WatchedNodes.size())
+  {
+    vtkErrorMacro("vtkMRMLWatchdogNode::GetWatchedNodeDisplayLabel failed: invalid index "<<watchedNodeIndex);
+    return NULL;
+  }
+  return this->Internal->WatchedNodes[watchedNodeIndex].displayLabel.c_str();
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLWatchdogNode::SetWatchedNodeDisplayLabel(int watchedNodeIndex, const char* displayLabel)
+{
+  if(watchedNodeIndex<0 || watchedNodeIndex>=this->Internal->WatchedNodes.size())
+  {
+    vtkErrorMacro("vtkMRMLWatchdogNode::SetWatchedNodeDisplayLabel failed: invalid index "<<watchedNodeIndex);
+    return;
+  }
+  this->Internal->WatchedNodes[watchedNodeIndex].displayLabel = (displayLabel ? displayLabel : "");
+}
+
+//---------------------------------------------------------------------------- 
+double vtkMRMLWatchdogNode::GetWatchedNodeUpdateTimeToleranceSec(int watchedNodeIndex)
+{
+  if(watchedNodeIndex<0 || watchedNodeIndex>=this->Internal->WatchedNodes.size())
+  {
+    vtkErrorMacro("vtkMRMLWatchdogNode::GetWatchedNodeUpdateTimeToleranceSec failed: invalid index "<<watchedNodeIndex);
+    return 0.0;
+  }
+  return this->Internal->WatchedNodes[watchedNodeIndex].updateTimeToleranceSec;
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLWatchdogNode::SetWatchedNodeUpdateTimeToleranceSec(int watchedNodeIndex, double updateTimeToleranceSec)
+{
+  if(watchedNodeIndex<0 || watchedNodeIndex>=this->Internal->WatchedNodes.size())
+  {
+    vtkErrorMacro("vtkMRMLWatchdogNode::SetWatchedNodeUpdateTimeToleranceSec failed: invalid index "<<watchedNodeIndex);
+    return;
+  }
+  this->Internal->WatchedNodes[watchedNodeIndex].updateTimeToleranceSec = updateTimeToleranceSec;
+}
+
+//----------------------------------------------------------------------------
+bool vtkMRMLWatchdogNode::GetWatchedNodeUpToDate(int watchedNodeIndex)
+{
+  if(watchedNodeIndex<0 || watchedNodeIndex>=this->Internal->WatchedNodes.size())
+  {
+    vtkErrorMacro("vtkMRMLWatchdogNode::GetWatchedNodeUpToDate failed: invalid index "<<watchedNodeIndex);
+    return true;
+  }
+  return this->Internal->WatchedNodes[watchedNodeIndex].lastStateUpToDate;
+}
+
+//----------------------------------------------------------------------------
+double vtkMRMLWatchdogNode::GetWatchedNodeElapsedTimeSinceLastUpdateSec(int watchedNodeIndex)
+{
+  if(watchedNodeIndex<0 || watchedNodeIndex>=this->Internal->WatchedNodes.size())
+  {
+    vtkErrorMacro("vtkMRMLWatchdogNode::GetWatchedNodeElapsedTimeSinceLastUpdateSec failed: invalid index "<<watchedNodeIndex);
     return 0;
   }
-  tempWatchedTool.tool=toolAdded;
-  tempWatchedTool.label=getToolLabel(toolAdded->GetName());
-  tempWatchedTool.id=toolAdded->GetID();
-  //tempWatchedTool.LastTimeStamp=mrmlNode->GetMTime();
-  this->WatchedTools.push_back(tempWatchedTool);
-
-  return GetNumberOfTools();
+  return this->Internal->WatchedNodes[watchedNodeIndex].updateTimer->GetElapsedTime();
 }
 
-void vtkMRMLWatchdogNode::RemoveTool(int row)
+//----------------------------------------------------------------------------
+bool vtkMRMLWatchdogNode::GetWatchedNodePlaySound(int watchedNodeIndex)
 {
-  if(row>=0 && row<this->WatchedTools.size())
+  if(watchedNodeIndex<0 || watchedNodeIndex>=this->Internal->WatchedNodes.size())
   {
-    std::list<WatchedTool>::iterator it = this->WatchedTools.begin();
-    advance (it,row);
-    this->WatchedTools.erase(it);
+    vtkErrorMacro("vtkMRMLWatchdogNode::GetWatchedNodePlaySound failed: invalid index "<<watchedNodeIndex);
+    return 0.0;
   }
+  return this->Internal->WatchedNodes[watchedNodeIndex].playSound;
 }
 
-void vtkMRMLWatchdogNode::SwapTools( int toolA, int toolB )
+//----------------------------------------------------------------------------
+void vtkMRMLWatchdogNode::SetWatchedNodePlaySound(int watchedNodeIndex, bool playSound)
 {
-  std::list<WatchedTool>::iterator itA = this->WatchedTools.begin();
-  advance (itA,toolA);
-  std::list<WatchedTool>::iterator itB = this->WatchedTools.begin();
-  advance (itB,toolB);
-
-  WatchedTool toolTemp;
-  toolTemp.status=itA->status;
-  toolTemp.tool=itA->tool;
-  toolTemp.lastTimeStamp=itA->lastTimeStamp;
-  toolTemp.label=itA->label;
-  toolTemp.id=itA->id;
-  toolTemp.lastElapsedTimeStamp=itA->lastElapsedTimeStamp;
-  toolTemp.playSound=itA->playSound;
-
-  itA->status=itB->status;
-  itA->tool=itB->tool;
-  itA->lastTimeStamp=itB->lastTimeStamp;
-  itA->label=itB->label;
-  itA->id=itB->id;
-  itA->lastElapsedTimeStamp=itB->lastElapsedTimeStamp;
-  itA->playSound=itB->playSound;
-
-  itB->status=toolTemp.status;
-  itB->tool=toolTemp.tool;
-  itB->lastTimeStamp=toolTemp.lastTimeStamp;
-  itB->label=toolTemp.label;
-  itB->id=toolTemp.id;
-  itB->lastElapsedTimeStamp=toolTemp.lastElapsedTimeStamp;
-  itB->playSound=toolTemp.playSound;
-}
-
-bool vtkMRMLWatchdogNode::HasTool(char * toolName)
-{
-  for (std::list<WatchedTool>::iterator it = this->WatchedTools.begin() ; it != this->WatchedTools.end(); ++it)
+  if(watchedNodeIndex<0 || watchedNodeIndex>=this->Internal->WatchedNodes.size())
   {
-    if((*it).tool== NULL)
-    {
-      continue;
-    }
-    if(!strcmp((*it).tool->GetName(), toolName))
-    {
-      return true;
-    }
+    vtkErrorMacro("vtkMRMLWatchdogNode::SetWatchedNodePlaySound failed: invalid index "<<watchedNodeIndex);
+    return;
   }
-  return false;
+  this->Internal->WatchedNodes[watchedNodeIndex].playSound = playSound;
 }
 
-int vtkMRMLWatchdogNode::GetNumberOfTools()
+//---------------------------------------------------------------------------
+void vtkMRMLWatchdogNode::ProcessMRMLEvents ( vtkObject *caller, unsigned long event, void *callData )
 {
-  return this->WatchedTools.size();
+  Superclass::ProcessMRMLEvents(caller, event, callData);
+
+  vtkMRMLNode* callerNode = vtkMRMLNode::SafeDownCast(caller);
+  if (callerNode!=NULL)
+  {
+    int numberOfWatchedNodes = this->GetNumberOfNodeReferences(WATCHED_NODE_REFERENCE_ROLE_NAME);
+    for (unsigned int watchedNodeIndex=0; watchedNodeIndex<numberOfWatchedNodes; watchedNodeIndex++)
+    {
+      vtkMRMLNode* watchedNode = this->GetNthNodeReference(WATCHED_NODE_REFERENCE_ROLE_NAME, watchedNodeIndex);
+      if (watchedNode == NULL || watchedNode != callerNode || event != vtkCommand::ModifiedEvent)
+      {
+        continue;
+      }
+      if(watchedNodeIndex>=this->Internal->WatchedNodes.size())
+      {
+        vtkErrorMacro("vtkMRMLWatchdogNode::ProcessMRMLEvents failed: no watched node found for node reference "<<watchedNodeIndex);
+        break;
+      }
+      // we've found the watched node that has been just updated, reset the start time of its update timer
+      this->Internal->WatchedNodes[watchedNodeIndex].updateTimer->StartTimer();
+      break;
+    }
+  } 
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLWatchdogNode::UpdateWatchedNodesStatus()
+{
+  bool watchedToolStateModified = false;
+  for (std::vector<vtkMRMLWatchdogNode::vtkInternal::WatchedNode>::iterator
+    it = this->Internal->WatchedNodes.begin(); it != this->Internal->WatchedNodes.end(); ++it)
+  {
+    bool upToDate = it->updateTimer->GetElapsedTime()<=it->updateTimeToleranceSec;
+    if (upToDate != it->lastStateUpToDate)
+    {
+      it->lastStateUpToDate = upToDate;
+      watchedToolStateModified = true;
+    }
+  }
+  if (watchedToolStateModified)
+  {
+    this->Modified();
+  }
 }

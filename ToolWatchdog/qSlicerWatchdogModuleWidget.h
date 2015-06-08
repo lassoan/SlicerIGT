@@ -25,8 +25,6 @@
 class qSlicerWatchdogModuleWidgetPrivate;
 class vtkMRMLNode;
 //class vtkMRMLWatchdogNode;
-//class qMRMLWatchdogToolBar;
-class qSlicerToolBarManagerWidget;
 
 /// \ingroup Slicer_QtModules_ToolWatchdog
 class Q_SLICER_QTMODULES_WATCHDOG_EXPORT qSlicerWatchdogModuleWidget :
@@ -39,9 +37,6 @@ public:
   qSlicerWatchdogModuleWidget(QWidget *parent=0);
   virtual ~qSlicerWatchdogModuleWidget();
 
-  /// ToolBarManagerWidget is a helper class to manage the toolbar when the module widget is not created  yet
-  void SetToolBarManager(qSlicerToolBarManagerWidget * );
-
 public slots:
 
   /// Set the current MRML scene to the widget
@@ -50,6 +45,9 @@ public slots:
   void onSceneImportedEvent();
 
 protected slots:
+
+  /// Starts/stops playing sound based on the status of all current tools
+  void onUpdateSound();
 
   /// Refresh the gui from the currently active toolwatchdog node 
   void updateFromMRMLNode();
@@ -75,9 +73,9 @@ protected slots:
   /// Swaps the current table row with the upper row
   void onUpButtonClicked();
   /// Deletes the current selected row(s)
-  void onDeleteButtonClicked();
+  void onRemoveToolNode();
   /// Adds the tool to the watchdog node
-  void onToolNodeAdded( );
+  void onAddToolNode( );
   /// Moves up/down row. Deletes selected row(s)
   void onToolsTableContextMenu(const QPoint& position);
   /// Deletes and creates a table. Updates gui accordingly to node state

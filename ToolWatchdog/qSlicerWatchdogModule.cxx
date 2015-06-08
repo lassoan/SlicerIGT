@@ -16,16 +16,25 @@
 ==============================================================================*/
 
 // Qt includes
+#include <QTimer>
 #include <QtPlugin>
+
+#include "qSlicerCoreApplication.h"
 
 // Watchdog Logic includes
 #include <vtkSlicerWatchdogLogic.h>
+#include "vtkMRMLSliceViewDisplayableManagerFactory.h"
+#include "vtkMRMLThreeDViewDisplayableManagerFactory.h" 
 
 // Watchdog includes
 #include "qSlicerWatchdogModule.h"
 #include "qSlicerWatchdogModuleWidget.h"
-#include "qSlicerToolBarManagerWidget.h"
+#include "vtkMRMLWatchdogDisplayableManager2D.h"
+#include "vtkMRMLWatchdogDisplayableManager3D.h"
 
+#include "vtkMRMLWatchdogNode.h"
+
+static const double UPDATE_WATCHDOG_NODES_PERIOD_SEC = 0.2;
 
 //-----------------------------------------------------------------------------
 Q_EXPORT_PLUGIN2(qSlicerWatchdogModule, qSlicerWatchdogModule);
@@ -37,7 +46,7 @@ class qSlicerWatchdogModulePrivate
 public:
   qSlicerWatchdogModulePrivate();
   ~qSlicerWatchdogModulePrivate();
-  qSlicerToolBarManagerWidget * ToolBarManager;
+  QTimer UpdateAllWatchdogNodesTimer;
 };
 
 //-----------------------------------------------------------------------------
@@ -46,17 +55,11 @@ public:
 //-----------------------------------------------------------------------------
 qSlicerWatchdogModulePrivate::qSlicerWatchdogModulePrivate()
 {
-  this->ToolBarManager=NULL;
-
 }
 
 //-----------------------------------------------------------------------------
 qSlicerWatchdogModulePrivate::~qSlicerWatchdogModulePrivate()
 {
-  if(this->ToolBarManager)
-  {
-    delete this->ToolBarManager;
-  }
 }
 
 //-----------------------------------------------------------------------------
@@ -67,6 +70,15 @@ qSlicerWatchdogModule::qSlicerWatchdogModule(QObject* _parent)
   : Superclass(_parent)
   , d_ptr(new qSlicerWatchdogModulePrivate)
 {
+  Q_D(qSlicerWatchdogModule);
+  connect(&d->UpdateAllWatchdogNodesTimer, SIGNAL(timeout()), this, SLOT(updateAllWatchdogNodes()));
+  vtkMRMLScene * scene = qSlicerCoreApplication::application()->mrmlScene();
+  if (scene)
+    {
+    // Need to listen for any new watchdog nodes being added to start/stop timer
+    this->qvtkConnect(scene, vtkMRMLScene::NodeAddedEvent, this, SLOT(onNodeAddedEvent(vtkObject*,vtkObject*)));
+    this->qvtkConnect(scene, vtkMRMLScene::NodeRemovedEvent, this, SLOT(onNodeRemovedEvent(vtkObject*,vtkObject*)));
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -91,6 +103,7 @@ QStringList qSlicerWatchdogModule::contributors() const
 {
   QStringList moduleContributors;
   moduleContributors << QString("Jaime Garcia-Guevara (Queen's University)");
+  moduleContributors << QString("Andras Lasso (Queen's University)");
   moduleContributors << QString("Tamas Ungi (Queen's University)");
   return moduleContributors;
 }
@@ -117,6 +130,16 @@ QStringList qSlicerWatchdogModule::dependencies() const
 void qSlicerWatchdogModule::setup()
 {
   this->Superclass::setup();
+  
+  // TODO: use a single displayable manager - there is probably no need for separate 2d/3d
+
+  // Use the displayable manager class to make sure the the containing library is loaded
+  vtkSmartPointer<vtkMRMLWatchdogDisplayableManager2D> dm2d=vtkSmartPointer<vtkMRMLWatchdogDisplayableManager2D>::New();
+  vtkSmartPointer<vtkMRMLWatchdogDisplayableManager3D> dm3d=vtkSmartPointer<vtkMRMLWatchdogDisplayableManager3D>::New();
+
+  // Register displayable managers
+  vtkMRMLSliceViewDisplayableManagerFactory::GetInstance()->RegisterDisplayableManager("vtkMRMLWatchdogDisplayableManager2D");
+  vtkMRMLThreeDViewDisplayableManagerFactory::GetInstance()->RegisterDisplayableManager("vtkMRMLWatchdogDisplayableManager3D"); 
 }
 
 //-----------------------------------------------------------------------------
@@ -124,13 +147,6 @@ void qSlicerWatchdogModule::setMRMLScene(vtkMRMLScene* _mrmlScene)
 {
   this->Superclass::setMRMLScene(_mrmlScene);
   Q_D(qSlicerWatchdogModule);
-  if (d->ToolBarManager == NULL)
-  {
-    d->ToolBarManager = new qSlicerToolBarManagerWidget;
-  }
-  d->ToolBarManager->setMRMLScene(_mrmlScene);
-  vtkSlicerWatchdogLogic* watchdogLogic = vtkSlicerWatchdogLogic::SafeDownCast(this->Superclass::logic());
-  d->ToolBarManager->setLogic(watchdogLogic);
 }
 
 //-----------------------------------------------------------------------------
@@ -138,7 +154,6 @@ qSlicerAbstractModuleRepresentation* qSlicerWatchdogModule::createWidgetRepresen
 {
   Q_D(qSlicerWatchdogModule);
   qSlicerWatchdogModuleWidget * watchdogWidget = new qSlicerWatchdogModuleWidget;
-  watchdogWidget->SetToolBarManager(d->ToolBarManager);
   return watchdogWidget;
 }
 
@@ -146,4 +161,57 @@ qSlicerAbstractModuleRepresentation* qSlicerWatchdogModule::createWidgetRepresen
 vtkMRMLAbstractLogic* qSlicerWatchdogModule::createLogic()
 {
   return vtkSlicerWatchdogLogic::New();
+}
+
+// --------------------------------------------------------------------------
+void qSlicerWatchdogModule::onNodeAddedEvent(vtkObject*, vtkObject* node)
+{
+  Q_D(qSlicerWatchdogModule);
+
+  vtkMRMLWatchdogNode* watchdogNode = vtkMRMLWatchdogNode::SafeDownCast(node);
+  if (watchdogNode)
+    {
+    // If the timer is not active
+    if (!d->UpdateAllWatchdogNodesTimer.isActive())
+      {
+      d->UpdateAllWatchdogNodesTimer.start(UPDATE_WATCHDOG_NODES_PERIOD_SEC*1000.0);
+      }
+    }
+}
+
+// --------------------------------------------------------------------------
+void qSlicerWatchdogModule::onNodeRemovedEvent(vtkObject*, vtkObject* node)
+{
+  Q_D(qSlicerWatchdogModule);
+
+  vtkMRMLWatchdogNode* watchdogNode = vtkMRMLWatchdogNode::SafeDownCast(node);
+  if (watchdogNode)
+    {
+    // If the timer is active
+    if (d->UpdateAllWatchdogNodesTimer.isActive())
+      {
+      // Check if there is any other sequence browser node left in the Scene
+      vtkMRMLScene * scene = qSlicerCoreApplication::application()->mrmlScene();
+      if (scene)
+        {
+        std::vector<vtkMRMLNode *> nodes;
+        this->mrmlScene()->GetNodesByClass("vtkMRMLWatchdogNode", nodes);
+        if (nodes.size() == 0)
+          {
+          // The last sequence browser was removed
+          d->UpdateAllWatchdogNodesTimer.stop();
+          }
+        }
+      }
+    }
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerWatchdogModule::updateAllWatchdogNodes()
+{
+  vtkSlicerWatchdogLogic* watchdogLogic = vtkSlicerWatchdogLogic::SafeDownCast(this->Superclass::logic());
+  if (watchdogLogic)
+    {
+    watchdogLogic->UpdateAllWatchdogNodes();
+    }
 }

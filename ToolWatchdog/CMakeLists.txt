@@ -8,7 +8,7 @@ string(TOUPPER ${MODULE_NAME} MODULE_NAME_UPPER)
 #-----------------------------------------------------------------------------
 add_subdirectory(MRML)
 add_subdirectory(Logic)
-add_subdirectory(Widgets)
+add_subdirectory(MRMLDM)
 
 #-----------------------------------------------------------------------------
 set(MODULE_EXPORT_DIRECTIVE "Q_SLICER_QTMODULES_${MODULE_NAME_UPPER}_EXPORT")
@@ -17,9 +17,6 @@ set(MODULE_EXPORT_DIRECTIVE "Q_SLICER_QTMODULES_${MODULE_NAME_UPPER}_EXPORT")
 set(MODULE_INCLUDE_DIRECTORIES
   ${CMAKE_CURRENT_SOURCE_DIR}/Logic
   ${CMAKE_CURRENT_BINARY_DIR}/Logic
-  ${CMAKE_CURRENT_SOURCE_DIR}/Widgets
-  ${CMAKE_CURRENT_BINARY_DIR}/Widgets
-  ${qMRMLWatchdogModuleWidgets_INCLUDE_DIRS}
   )
 
 set(MODULE_SRCS
@@ -27,14 +24,11 @@ set(MODULE_SRCS
   qSlicer${MODULE_NAME}Module.h
   qSlicer${MODULE_NAME}ModuleWidget.cxx
   qSlicer${MODULE_NAME}ModuleWidget.h
-  qSlicerToolBarManagerWidget.cxx
-  qSlicerToolBarManagerWidget.h
   )
 
 set(MODULE_MOC_SRCS
   qSlicer${MODULE_NAME}Module.h
   qSlicer${MODULE_NAME}ModuleWidget.h
-  qSlicerToolBarManagerWidget.h
   )
 
 set(MODULE_UI_SRCS
@@ -42,9 +36,9 @@ set(MODULE_UI_SRCS
   )
 
 set(MODULE_TARGET_LIBRARIES
+  vtkSlicer${MODULE_NAME}ModuleMRMLDisplayableManager
   vtkSlicer${MODULE_NAME}ModuleMRML
   vtkSlicer${MODULE_NAME}ModuleLogic
-  qMRML${MODULE_NAME}ModuleWidgets
   ${QT_LIBRARIES}
   qMRMLWidgets
   MRMLLogic
