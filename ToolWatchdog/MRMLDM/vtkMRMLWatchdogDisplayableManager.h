@@ -20,39 +20,38 @@
 
 ==============================================================================*/
 
-#ifndef __vtkMRMLWatchdogDisplayableManager2D_h
-#define __vtkMRMLWatchdogDisplayableManager2D_h
+#ifndef __vtkMRMLWatchdogDisplayableManager_h
+#define __vtkMRMLWatchdogDisplayableManager_h
 
 // MRMLDisplayableManager includes
-#include "vtkMRMLAbstractSliceViewDisplayableManager.h"
+#include "vtkMRMLAbstractDisplayableManager.h"
+
 #include "vtkSlicerWatchdogModuleMRMLDisplayableManagerExport.h"
 
-/// \brief Displayable manager for showing watchdogs in slice (2D) views.
+/// \brief Display watchdog in 3D views
 ///
-/// Displays watchdogs in slice viewers as glyphs, deformed grid, or
-/// contour lines
+/// Displays watchdog in 3D viewers
 ///
-class VTK_SLICER_WATCHDOG_MODULE_MRMLDISPLAYABLEMANAGER_EXPORT vtkMRMLWatchdogDisplayableManager2D
-  : public vtkMRMLAbstractSliceViewDisplayableManager
+class VTK_SLICER_WATCHDOG_MODULE_MRMLDISPLAYABLEMANAGER_EXPORT vtkMRMLWatchdogDisplayableManager
+  : public vtkMRMLAbstractDisplayableManager
 {
-
 public:
 
-  static vtkMRMLWatchdogDisplayableManager2D* New();
-  vtkTypeMacro(vtkMRMLWatchdogDisplayableManager2D, vtkMRMLAbstractSliceViewDisplayableManager);
+  static vtkMRMLWatchdogDisplayableManager* New();
+  vtkTypeMacro(vtkMRMLWatchdogDisplayableManager,vtkMRMLAbstractDisplayableManager);
   void PrintSelf(ostream& os, vtkIndent indent);
 
 protected:
 
-  vtkMRMLWatchdogDisplayableManager2D();
-  virtual ~vtkMRMLWatchdogDisplayableManager2D();
+  vtkMRMLWatchdogDisplayableManager();
+  virtual ~vtkMRMLWatchdogDisplayableManager();
 
   virtual void UnobserveMRMLScene();
   virtual void OnMRMLSceneNodeAdded(vtkMRMLNode* node);
   virtual void OnMRMLSceneNodeRemoved(vtkMRMLNode* node);
   virtual void ProcessMRMLNodesEvents(vtkObject* caller, unsigned long event, void* callData);
 
-  /// Update Actors based on watchdogs in the scene
+  /// Update Actors based on watchdog in the scene
   virtual void UpdateFromMRML();
 
   virtual void OnMRMLSceneStartClose();
@@ -60,17 +59,16 @@ protected:
 
   virtual void OnMRMLSceneEndBatchProcess();
 
-  /// Initialize the displayable manager based on its associated
-  /// vtkMRMLSliceNode
+  /// Initialize the displayable manager
   virtual void Create();
 
 private:
 
-  vtkMRMLWatchdogDisplayableManager2D(const vtkMRMLWatchdogDisplayableManager2D&);// Not implemented
-  void operator=(const vtkMRMLWatchdogDisplayableManager2D&);                     // Not Implemented
+  vtkMRMLWatchdogDisplayableManager(const vtkMRMLWatchdogDisplayableManager&); // Not implemented
+  void operator=(const vtkMRMLWatchdogDisplayableManager&);                 // Not Implemented
 
   class vtkInternal;
-  vtkInternal * Internal;
+  vtkInternal* Internal;
   friend class vtkInternal;
 };
 

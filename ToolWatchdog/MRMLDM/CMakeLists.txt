@@ -13,8 +13,7 @@ set(${KIT}_INCLUDE_DIRECTORIES
   )
 
 set(displayable_manager_SRCS
-  vtkMRML${MODULE_NAME}DisplayableManager2D.cxx
-  vtkMRML${MODULE_NAME}DisplayableManager3D.cxx
+  vtkMRML${MODULE_NAME}DisplayableManager.cxx
   )
 
 set(VTK_USE_INSTANTIATOR_NEW 1)

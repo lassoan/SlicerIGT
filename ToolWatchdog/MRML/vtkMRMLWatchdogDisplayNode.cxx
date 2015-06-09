@@ -46,6 +46,9 @@ vtkMRMLWatchdogDisplayNode::vtkMRMLWatchdogDisplayNode()
 {
   this->Position=POSITION_BOTTOM_LEFT;
   this->FontSize=24;
+  this->Color[0]=1;
+  this->Color[1]=0;
+  this->Color[2]=0;
 }
 
 //----------------------------------------------------------------------------

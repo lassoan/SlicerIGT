@@ -22,7 +22,7 @@ Ontario Ministry of Health and Long-Term Care.
 
 
 // MRMLDisplayableManager includes
-#include "vtkMRMLWatchdogDisplayableManager3D.h"
+#include "vtkMRMLWatchdogDisplayableManager.h"
 
 #include "vtkSlicerWatchdogLogic.h"
 
@@ -37,10 +37,6 @@ Ontario Ministry of Health and Long-Term Care.
 // VTK includes
 #include <vtkActor2D.h>
 #include <vtkCellArray.h>
-//#include <vtkColorTransferFunction.h>
-//#include <vtkDataSetAttributes.h>
-//#include <vtkLookupTable.h>
-//#include <vtkMatrix4x4.h>
 #include <vtkNew.h>
 #include <vtkObjectFactory.h>
 #include <vtkPolyData.h>
@@ -53,15 +49,17 @@ Ontario Ministry of Health and Long-Term Care.
 #include <vtkTextProperty.h>
 #include <vtkTriangleFilter.h>
 
-//---------------------------------------------------------------------------
-vtkStandardNewMacro ( vtkMRMLWatchdogDisplayableManager3D );
+const double TEXT_MARGIN_PERCENT=20; // margin around text, percentage of font size
 
 //---------------------------------------------------------------------------
-class vtkMRMLWatchdogDisplayableManager3D::vtkInternal
+vtkStandardNewMacro ( vtkMRMLWatchdogDisplayableManager );
+
+//---------------------------------------------------------------------------
+class vtkMRMLWatchdogDisplayableManager::vtkInternal
 {
 public:
 
-  vtkInternal(vtkMRMLWatchdogDisplayableManager3D* external);
+  vtkInternal(vtkMRMLWatchdogDisplayableManager* external);
   ~vtkInternal();
 
   struct Pipeline
@@ -101,7 +99,7 @@ public:
   void ClearDisplayableNodes();
 
 private:
-  vtkMRMLWatchdogDisplayableManager3D* External;
+  vtkMRMLWatchdogDisplayableManager* External;
   bool AddingWatchdogNode;
 };
 
@@ -109,23 +107,23 @@ private:
 // vtkInternal methods
 
 //---------------------------------------------------------------------------
-vtkMRMLWatchdogDisplayableManager3D::vtkInternal::vtkInternal(vtkMRMLWatchdogDisplayableManager3D * external)
+vtkMRMLWatchdogDisplayableManager::vtkInternal::vtkInternal(vtkMRMLWatchdogDisplayableManager * external)
 : External(external)
 , AddingWatchdogNode(false)
 {
 }
 
 //---------------------------------------------------------------------------
-vtkMRMLWatchdogDisplayableManager3D::vtkInternal::~vtkInternal()
+vtkMRMLWatchdogDisplayableManager::vtkInternal::~vtkInternal()
 {
   this->ClearDisplayableNodes();
 }
 
 //---------------------------------------------------------------------------
-bool vtkMRMLWatchdogDisplayableManager3D::vtkInternal::UseDisplayNode(vtkMRMLWatchdogDisplayNode* displayNode)
+bool vtkMRMLWatchdogDisplayableManager::vtkInternal::UseDisplayNode(vtkMRMLWatchdogDisplayNode* displayNode)
 {
-  // allow annotations to appear only in designated viewers
-  if (displayNode && !displayNode->IsDisplayableInView(this->External->GetMRMLViewNode()->GetID()))
+  //if (displayNode && !displayNode->IsDisplayableInView(this->External->GetMRMLViewNode()->GetID()))
+  if (displayNode && !displayNode->IsDisplayableInView(this->External->GetMRMLDisplayableNode()->GetID()))
   {
     return false;
   }
@@ -137,13 +135,13 @@ bool vtkMRMLWatchdogDisplayableManager3D::vtkInternal::UseDisplayNode(vtkMRMLWat
 }
 
 //---------------------------------------------------------------------------
-bool vtkMRMLWatchdogDisplayableManager3D::vtkInternal::IsVisible(vtkMRMLWatchdogDisplayNode* displayNode)
+bool vtkMRMLWatchdogDisplayableManager::vtkInternal::IsVisible(vtkMRMLWatchdogDisplayNode* displayNode)
 {
   return displayNode && (displayNode->GetVisibility() != 0);
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::AddWatchdogNode(vtkMRMLWatchdogNode* node)
+void vtkMRMLWatchdogDisplayableManager::vtkInternal::AddWatchdogNode(vtkMRMLWatchdogNode* node)
 {
   if (this->AddingWatchdogNode)
   {
@@ -173,7 +171,7 @@ void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::AddWatchdogNode(vtkMRMLWa
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::RemoveWatchdogNode(vtkMRMLWatchdogNode* node)
+void vtkMRMLWatchdogDisplayableManager::vtkInternal::RemoveWatchdogNode(vtkMRMLWatchdogNode* node)
 {
   if (!node)
   {
@@ -197,7 +195,7 @@ void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::RemoveWatchdogNode(vtkMRM
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::UpdateDisplayableWatchdogs(vtkMRMLWatchdogNode* mNode)
+void vtkMRMLWatchdogDisplayableManager::vtkInternal::UpdateDisplayableWatchdogs(vtkMRMLWatchdogNode* mNode)
 {
   // Update the pipeline for all tracked DisplayableNode
   PipelinesCacheType::iterator pipelinesIter;
@@ -213,7 +211,7 @@ void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::UpdateDisplayableWatchdog
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::RemoveDisplayNode(vtkMRMLWatchdogDisplayNode* displayNode)
+void vtkMRMLWatchdogDisplayableManager::vtkInternal::RemoveDisplayNode(vtkMRMLWatchdogDisplayNode* displayNode)
 {
   PipelinesCacheType::iterator actorsIt = this->DisplayPipelines.find(displayNode);
   if(actorsIt == this->DisplayPipelines.end())
@@ -228,7 +226,7 @@ void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::RemoveDisplayNode(vtkMRML
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::AddDisplayNode(vtkMRMLWatchdogNode* mNode, vtkMRMLWatchdogDisplayNode* displayNode)
+void vtkMRMLWatchdogDisplayableManager::vtkInternal::AddDisplayNode(vtkMRMLWatchdogNode* mNode, vtkMRMLWatchdogDisplayNode* displayNode)
 {
   if (!mNode || !displayNode)
   {
@@ -294,7 +292,7 @@ void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::AddDisplayNode(vtkMRMLWat
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::UpdateDisplayNode(vtkMRMLWatchdogDisplayNode* displayNode)
+void vtkMRMLWatchdogDisplayableManager::vtkInternal::UpdateDisplayNode(vtkMRMLWatchdogDisplayNode* displayNode)
 {
   // If the DisplayNode already exists, just update.
   //   otherwise, add as new node
@@ -316,7 +314,7 @@ void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::UpdateDisplayNode(vtkMRML
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::UpdateDisplayNodePipeline(vtkMRMLWatchdogDisplayNode* displayNode, const Pipeline* pipeline)
+void vtkMRMLWatchdogDisplayableManager::vtkInternal::UpdateDisplayNodePipeline(vtkMRMLWatchdogDisplayNode* displayNode, const Pipeline* pipeline)
 {
   // Sets visibility, set pipeline polydata input, update color
   //   calculate and set pipeline watchdogs.
@@ -357,10 +355,16 @@ void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::UpdateDisplayNodePipeline
 
   pipeline->TextActor->SetInput(displayedText.c_str());
   pipeline->TextActor->GetTextProperty()->SetFontSize(displayNode->GetFontSize());
+  int margin = TEXT_MARGIN_PERCENT/100.0*displayNode->GetFontSize();
+  pipeline->TextActor->SetPosition(margin, margin);
+  //pipeline->TextActor->SetOrigin2(margin, margin);
 
   double boundingBox[4]={0};
   pipeline->TextActor->GetBoundingBox(this->External->GetRenderer(), boundingBox);
-
+  boundingBox[0]-=margin;
+  boundingBox[1]+=margin*2;
+  boundingBox[2]-=margin;
+  boundingBox[3]+=margin*2;
   pipeline->BackgroundCornerPoints->SetPoint(0,boundingBox[0],boundingBox[2],0);
   pipeline->BackgroundCornerPoints->SetPoint(1,boundingBox[1],boundingBox[2],0);
   pipeline->BackgroundCornerPoints->SetPoint(2,boundingBox[1],boundingBox[3],0);
@@ -375,19 +379,12 @@ void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::UpdateDisplayNodePipeline
     return;
   }
 
-  /*if (pipeline->InputPolyData->GetNumberOfPoints()==0)
-  {
-    pipeline->Actor->SetVisibility(false);
-    return;
-  }
-  */
-
   // Update pipeline actor
   this->SetWatchdogDisplayProperty(displayNode, pipeline->BackgroundActor.GetPointer());
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::AddObservations(vtkMRMLWatchdogNode* node)
+void vtkMRMLWatchdogDisplayableManager::vtkInternal::AddObservations(vtkMRMLWatchdogNode* node)
 {
   vtkEventBroker* broker = vtkEventBroker::GetInstance();
   if (!broker->GetObservationExist(node, vtkCommand::ModifiedEvent, this->External, this->External->GetMRMLNodesCallbackCommand() ))
@@ -401,7 +398,7 @@ void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::AddObservations(vtkMRMLWa
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::RemoveObservations(vtkMRMLWatchdogNode* node)
+void vtkMRMLWatchdogDisplayableManager::vtkInternal::RemoveObservations(vtkMRMLWatchdogNode* node)
 {
   vtkEventBroker* broker = vtkEventBroker::GetInstance();
   vtkEventBroker::ObservationVector observations;
@@ -412,7 +409,7 @@ void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::RemoveObservations(vtkMRM
 }
 
 //---------------------------------------------------------------------------
-bool vtkMRMLWatchdogDisplayableManager3D::vtkInternal::IsNodeObserved(vtkMRMLWatchdogNode* node)
+bool vtkMRMLWatchdogDisplayableManager::vtkInternal::IsNodeObserved(vtkMRMLWatchdogNode* node)
 {
   vtkEventBroker* broker = vtkEventBroker::GetInstance();
   vtkCollection* observations = broker->GetObservationsForSubject(node);
@@ -427,7 +424,7 @@ bool vtkMRMLWatchdogDisplayableManager3D::vtkInternal::IsNodeObserved(vtkMRMLWat
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::ClearDisplayableNodes()
+void vtkMRMLWatchdogDisplayableManager::vtkInternal::ClearDisplayableNodes()
 {
   while(this->WatchdogToDisplayNodes.size() > 0)
   {
@@ -436,14 +433,14 @@ void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::ClearDisplayableNodes()
 }
 
 //---------------------------------------------------------------------------
-bool vtkMRMLWatchdogDisplayableManager3D::vtkInternal::UseDisplayableNode(vtkMRMLWatchdogNode* node)
+bool vtkMRMLWatchdogDisplayableManager::vtkInternal::UseDisplayableNode(vtkMRMLWatchdogNode* node)
 {
   bool use = node && node->IsA("vtkMRMLWatchdogNode");
   return use;
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::SetWatchdogDisplayProperty(vtkMRMLWatchdogDisplayNode *displayNode, vtkActor2D* actor)
+void vtkMRMLWatchdogDisplayableManager::vtkInternal::SetWatchdogDisplayProperty(vtkMRMLWatchdogDisplayNode *displayNode, vtkActor2D* actor)
 {
   actor->GetProperty()->SetPointSize(displayNode->GetPointSize());
   actor->GetProperty()->SetLineWidth(displayNode->GetLineWidth());
@@ -460,30 +457,30 @@ void vtkMRMLWatchdogDisplayableManager3D::vtkInternal::SetWatchdogDisplayPropert
 }
 
 //---------------------------------------------------------------------------
-// vtkMRMLWatchdogDisplayableManager3D methods
+// vtkMRMLWatchdogDisplayableManager methods
 
 //---------------------------------------------------------------------------
-vtkMRMLWatchdogDisplayableManager3D::vtkMRMLWatchdogDisplayableManager3D()
+vtkMRMLWatchdogDisplayableManager::vtkMRMLWatchdogDisplayableManager()
 {
   this->Internal = new vtkInternal(this);
 }
 
 //---------------------------------------------------------------------------
-vtkMRMLWatchdogDisplayableManager3D::~vtkMRMLWatchdogDisplayableManager3D()
+vtkMRMLWatchdogDisplayableManager::~vtkMRMLWatchdogDisplayableManager()
 {
   delete this->Internal;
   this->Internal=NULL;
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::PrintSelf ( ostream& os, vtkIndent indent )
+void vtkMRMLWatchdogDisplayableManager::PrintSelf ( ostream& os, vtkIndent indent )
 {
   this->Superclass::PrintSelf ( os, indent );
-  os << indent << "vtkMRMLWatchdogDisplayableManager3D: " << this->GetClassName() << "\n";
+  os << indent << "vtkMRMLWatchdogDisplayableManager: " << this->GetClassName() << "\n";
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::OnMRMLSceneNodeAdded(vtkMRMLNode* node)
+void vtkMRMLWatchdogDisplayableManager::OnMRMLSceneNodeAdded(vtkMRMLNode* node)
 {
   if ( !node->IsA("vtkMRMLWatchdogNode") )
   {
@@ -502,7 +499,7 @@ void vtkMRMLWatchdogDisplayableManager3D::OnMRMLSceneNodeAdded(vtkMRMLNode* node
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::OnMRMLSceneNodeRemoved(vtkMRMLNode* node)
+void vtkMRMLWatchdogDisplayableManager::OnMRMLSceneNodeRemoved(vtkMRMLNode* node)
 {
   if ( node
     && (!node->IsA("vtkMRMLWatchdogNode"))
@@ -532,7 +529,7 @@ void vtkMRMLWatchdogDisplayableManager3D::OnMRMLSceneNodeRemoved(vtkMRMLNode* no
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::ProcessMRMLNodesEvents(vtkObject* caller, unsigned long event, void* callData)
+void vtkMRMLWatchdogDisplayableManager::ProcessMRMLNodesEvents(vtkObject* caller, unsigned long event, void* callData)
 {
   vtkMRMLScene* scene = this->GetMRMLScene();
 
@@ -566,14 +563,14 @@ void vtkMRMLWatchdogDisplayableManager3D::ProcessMRMLNodesEvents(vtkObject* call
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::UpdateFromMRML()
+void vtkMRMLWatchdogDisplayableManager::UpdateFromMRML()
 {
   this->SetUpdateFromMRMLRequested(0);
 
   vtkMRMLScene* scene = this->GetMRMLScene();
   if (!scene)
   {
-    vtkDebugMacro( "vtkMRMLWatchdogDisplayableManager3D->UpdateFromMRML: Scene is not set.")
+    vtkDebugMacro( "vtkMRMLWatchdogDisplayableManager->UpdateFromMRML: Scene is not set.")
       return;
   }
   this->Internal->ClearDisplayableNodes();
@@ -593,32 +590,32 @@ void vtkMRMLWatchdogDisplayableManager3D::UpdateFromMRML()
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::UnobserveMRMLScene()
+void vtkMRMLWatchdogDisplayableManager::UnobserveMRMLScene()
 {
   this->Internal->ClearDisplayableNodes();
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::OnMRMLSceneStartClose()
+void vtkMRMLWatchdogDisplayableManager::OnMRMLSceneStartClose()
 {
   this->Internal->ClearDisplayableNodes();
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::OnMRMLSceneEndClose()
+void vtkMRMLWatchdogDisplayableManager::OnMRMLSceneEndClose()
 {
   this->SetUpdateFromMRMLRequested(1);
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::OnMRMLSceneEndBatchProcess()
+void vtkMRMLWatchdogDisplayableManager::OnMRMLSceneEndBatchProcess()
 {
   this->SetUpdateFromMRMLRequested(1);
   this->RequestRender();
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager3D::Create()
+void vtkMRMLWatchdogDisplayableManager::Create()
 {
   Superclass::Create();
   this->SetUpdateFromMRMLRequested(1);

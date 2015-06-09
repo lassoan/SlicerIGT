@@ -58,6 +58,14 @@ void vtkSlicerWatchdogLogic::RegisterNodes()
   this->GetMRMLScene()->RegisterNodeClass( vtkSmartPointer< vtkMRMLWatchdogDisplayNode >::New() );
 }
 
+//---------------------------------------------------------------------------
+void vtkSlicerWatchdogLogic::SetMRMLSceneInternal(vtkMRMLScene * newScene)
+{
+  vtkNew<vtkIntArray> events;
+  events->InsertNextValue(vtkMRMLScene::NodeAddedEvent);
+  this->SetAndObserveMRMLSceneEventsInternal(newScene, events.GetPointer());
+}
+
 //-----------------------------------------------------------------------------
 void vtkSlicerWatchdogLogic::UpdateAllWatchdogNodes()
 {
@@ -78,4 +86,120 @@ void vtkSlicerWatchdogLogic::UpdateAllWatchdogNodes()
     }
     watchdogNode->UpdateWatchedNodesStatus();
   }
+}
+
+//---------------------------------------------------------------------------
+void vtkSlicerWatchdogLogic::OnMRMLSceneNodeAdded(vtkMRMLNode* node)
+{
+  if (!node)
+    {
+    return;
+    }
+  vtkMRMLWatchdogNode *watchdogNode = vtkMRMLWatchdogNode::SafeDownCast(node);
+  if (!watchdogNode)
+    {
+    return;
+    }
+  if (watchdogNode->GetDisplayNode() == NULL)
+    {
+    // add a display node
+    int modifyFlag = watchdogNode->StartModify();
+    std::string displayNodeID = this->AddNewDisplayNodeForWatchdogNode(watchdogNode);
+    watchdogNode->EndModify(modifyFlag);
+    vtkDebugMacro("Added a display node with id " << displayNodeID.c_str()
+                  << " for watchdog node with id " << watchdogNode->GetID());
+    }
+}
+
+//---------------------------------------------------------------------------
+std::string vtkSlicerWatchdogLogic::AddNewDisplayNodeForWatchdogNode(vtkMRMLNode *mrmlNode)
+{
+  std::string id;
+  if (!mrmlNode || !mrmlNode->GetScene())
+    {
+    vtkErrorMacro("AddNewDisplayNodeForWatchdogNode: unable to add a watchdog display node!");
+    return id;
+    }
+
+  // is there already a display node?
+  vtkMRMLDisplayableNode *displayableNode = vtkMRMLDisplayableNode::SafeDownCast(mrmlNode);
+  if (displayableNode && displayableNode->GetDisplayNode() != NULL)
+    {
+    return displayableNode->GetDisplayNodeID();
+    }
+
+  // create the display node
+  vtkMRMLWatchdogDisplayNode *displayNode = vtkMRMLWatchdogDisplayNode::New();
+  // set it from the defaults
+   vtkDebugMacro("AddNewDisplayNodeForWatchdogNode: set display node to defaults");
+
+  // add it to the scene
+  //mrmlNode->GetScene()->AddNode(displayNode);
+  vtkMRMLNode *n = mrmlNode->GetScene()->InsertBeforeNode(mrmlNode, displayNode);
+  if (!n)
+    {
+    vtkErrorMacro("AddNewDisplayNodeForWatchdogNode: error on insert before node");
+    return id;
+    }
+
+  // get the node id to return
+  id = std::string(displayNode->GetID());
+
+  // cast to watchdog node
+  vtkMRMLWatchdogNode *watchdogNode = vtkMRMLWatchdogNode::SafeDownCast(mrmlNode);
+  if (watchdogNode)
+    {
+    // observe the display node
+    watchdogNode->DisableModifiedEventOn();
+    watchdogNode->AddAndObserveDisplayNodeID(id.c_str());
+    watchdogNode->DisableModifiedEventOff();
+    }
+
+  // clean up
+  displayNode->Delete();
+
+  return id;
+}
+
+//---------------------------------------------------------------------------
+std::string vtkSlicerWatchdogLogic::AddNewWatchdogNode(const char *name, vtkMRMLScene *scene)
+{
+  std::string id;
+
+  if (!scene && !this->GetMRMLScene())
+    {
+    vtkErrorMacro("AddNewWatchdogNode: no scene to add a watchdog node to");
+    return id;
+    }
+
+  vtkMRMLScene *addToThisScene;
+  if (scene)
+    {
+    addToThisScene = scene;
+    }
+  else
+    {
+    addToThisScene = this->GetMRMLScene();
+    }
+
+  // create and add the node
+  vtkMRMLWatchdogNode *mnode = vtkMRMLWatchdogNode::New();
+  addToThisScene->AddNode(mnode);
+
+  // add a display node
+  std::string displayID = this->AddNewDisplayNodeForWatchdogNode(mnode);
+
+  if (displayID.compare("") != 0)
+    {
+    // get the node id to return
+    id = std::string(mnode->GetID());
+    if (name != NULL)
+      {
+      mnode->SetName(name);
+      }
+    }
+  // clean up
+  mnode->Delete();
+
+  return id;
 }

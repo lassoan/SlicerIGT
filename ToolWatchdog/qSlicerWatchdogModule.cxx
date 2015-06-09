@@ -29,8 +29,7 @@
 // Watchdog includes
 #include "qSlicerWatchdogModule.h"
 #include "qSlicerWatchdogModuleWidget.h"
-#include "vtkMRMLWatchdogDisplayableManager2D.h"
-#include "vtkMRMLWatchdogDisplayableManager3D.h"
+#include "vtkMRMLWatchdogDisplayableManager.h"
 
 #include "vtkMRMLWatchdogNode.h"
 
@@ -131,15 +130,12 @@ void qSlicerWatchdogModule::setup()
 {
   this->Superclass::setup();
   
-  // TODO: use a single displayable manager - there is probably no need for separate 2d/3d
-
   // Use the displayable manager class to make sure the the containing library is loaded
-  vtkSmartPointer<vtkMRMLWatchdogDisplayableManager2D> dm2d=vtkSmartPointer<vtkMRMLWatchdogDisplayableManager2D>::New();
-  vtkSmartPointer<vtkMRMLWatchdogDisplayableManager3D> dm3d=vtkSmartPointer<vtkMRMLWatchdogDisplayableManager3D>::New();
+  vtkSmartPointer<vtkMRMLWatchdogDisplayableManager> dm=vtkSmartPointer<vtkMRMLWatchdogDisplayableManager>::New();
 
   // Register displayable managers
-  vtkMRMLSliceViewDisplayableManagerFactory::GetInstance()->RegisterDisplayableManager("vtkMRMLWatchdogDisplayableManager2D");
-  vtkMRMLThreeDViewDisplayableManagerFactory::GetInstance()->RegisterDisplayableManager("vtkMRMLWatchdogDisplayableManager3D"); 
+  vtkMRMLSliceViewDisplayableManagerFactory::GetInstance()->RegisterDisplayableManager("vtkMRMLWatchdogDisplayableManager");
+  vtkMRMLThreeDViewDisplayableManagerFactory::GetInstance()->RegisterDisplayableManager("vtkMRMLWatchdogDisplayableManager"); 
 }
 
 //-----------------------------------------------------------------------------

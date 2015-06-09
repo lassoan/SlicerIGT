@@ -50,12 +50,27 @@ public:
   ///Every time the timer is reached this method updates the tools status and the elapsed time
   void UpdateAllWatchdogNodes();
 
+  /// Create a new watchdog node and associated display node, adding both to
+  /// the scene.
+  /// On success, return the id, on failure return an empty string.
+  std::string AddNewWatchdogNode(const char *name = "Watchdog", vtkMRMLScene *scene = NULL); 
+
+  /// Create a new display node and make observe it by the watchdog node.
+  /// On success, return the id, on failure return an empty string.
+  /// If a display node already exists for this node, return the id of that
+  /// node.
+  std::string AddNewDisplayNodeForWatchdogNode(vtkMRMLNode *mrmlNode);
+
 protected:
   vtkSlicerWatchdogLogic();
   virtual ~vtkSlicerWatchdogLogic();
 
   /// Register MRML Node classes to Scene. Gets called automatically when the MRMLScene is attached to this logic class.
   virtual void RegisterNodes();
+
+  /// Initialize listening to MRML events
+  virtual void SetMRMLSceneInternal(vtkMRMLScene * newScene);
+  virtual void OnMRMLSceneNodeAdded(vtkMRMLNode* node);
 
 private:
   vtkSlicerWatchdogLogic(const vtkSlicerWatchdogLogic&); // Not implemented
