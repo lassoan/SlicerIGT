@@ -98,11 +98,13 @@ public:
   /// Swap the specified tools watched from the tools' list
   void SwapWatchedNodes( int watchedNodeIndexA, int watchedNodeIndexB );
 
-  /*
-  /// Get the index of the watched node with the specified label.
-  /// Returns -1 if no watched node exist with the specified label.
-  int FindWatchedNodeByDisplayLabel(const char* displayLabel);
-  */
+  /// Get the index of the watched node
+  /// Returns -1 if the node is not watched.
+  int GetWatchedNodeIndex(vtkMRMLNode* watchedNode);
+
+  /// Get the N-th watched node
+  /// Returns NULL if the index is not in a valid range.
+  vtkMRMLNode* GetWatchedNode(int watchedNodeIndex);
 
   /// Get notification about updates of watched nodes
   virtual void ProcessMRMLEvents ( vtkObject * caller, unsigned long event, void * callData );

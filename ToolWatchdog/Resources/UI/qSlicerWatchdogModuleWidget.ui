@@ -61,7 +61,7 @@
           </property>
           <property name="nodeTypes" stdset="0">
            <stringlist>
-            <string>vtkMRMLLinearTransformNode</string>
+            <string>vtkMRMLTransformNode</string>
             <string>vtkMRMLVolumeNode</string>
            </stringlist>
           </property>

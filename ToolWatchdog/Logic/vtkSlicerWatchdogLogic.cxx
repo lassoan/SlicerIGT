@@ -20,6 +20,7 @@ limitations under the License.
 
 // MRML includes
 #include "vtkMRMLWatchdogNode.h"
+#include "vtkMRMLWatchdogDisplayNode.h"
 
 // VTK includes
 #include <vtkNew.h>
@@ -54,6 +55,7 @@ void vtkSlicerWatchdogLogic::RegisterNodes()
     return;
   }
   this->GetMRMLScene()->RegisterNodeClass( vtkSmartPointer< vtkMRMLWatchdogNode >::New() );
+  this->GetMRMLScene()->RegisterNodeClass( vtkSmartPointer< vtkMRMLWatchdogDisplayNode >::New() );
 }
 
 //-----------------------------------------------------------------------------

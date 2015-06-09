@@ -45,6 +45,8 @@ protected:
 public:
   qSlicerWatchdogModuleWidgetPrivate( qSlicerWatchdogModuleWidget& object );
   vtkSlicerWatchdogLogic* logic() const;
+
+  vtkWeakPointer<vtkMRMLWatchdogNode> WatchdogNode;
 };
 
 //-----------------------------------------------------------------------------
@@ -90,14 +92,12 @@ void qSlicerWatchdogModuleWidget::setup()
 
   this->setMRMLScene( d->logic()->GetMRMLScene() );
 
-  connect( d->ModuleNodeComboBox, SIGNAL( currentNodeChanged( vtkMRMLNode* ) ), this, SLOT( onWatchdogNodeChanged() ) );
+  connect( d->ModuleNodeComboBox, SIGNAL( currentNodeChanged( vtkMRMLNode* ) ), this, SLOT( onWatchdogNodeSelectionChanged() ) );
 
   connect( d->ToolComboBox, SIGNAL( currentNodeChanged( vtkMRMLNode* ) ), this, SLOT( updateWidget() ) );
 
   connect( d->ToolBarVisibilityCheckBox, SIGNAL( toggled(bool) ), this, SLOT( onToolBarVisibilityChanged(bool) ) );
   d->ToolBarVisibilityCheckBox->setChecked(true);
-
-  connect( d->StatusRefreshRateSpinBox, SIGNAL( valueChanged(int) ), this, SLOT( onStatusRefreshTimeSpinBoxChanged(int) ) );
 
   connect( d->AddToolButton, SIGNAL( clicked() ), this, SLOT( onAddToolNode() ) );
   connect( d->DeleteToolButton, SIGNAL( clicked() ), this, SLOT( onRemoveToolNode()) );
@@ -107,9 +107,17 @@ void qSlicerWatchdogModuleWidget::setup()
   connect( d->DownToolButton, SIGNAL( clicked() ), this, SLOT( onDownButtonClicked()) );
   d->DownToolButton->setIcon( QIcon( ":/Icons/MarkupsMoveDown.png" ) );
 
+  QStringList MarkupsTableHeaders;
+  MarkupsTableHeaders << "Label" << "Name" << "Sound" << "Status";
+  d->ToolsTableWidget->setColumnCount( TOOL_COLUMNS );
+  d->ToolsTableWidget->setHorizontalHeaderLabels( MarkupsTableHeaders );
+  d->ToolsTableWidget->horizontalHeader()->setResizeMode( QHeaderView::Stretch );
+
   connect(d->ToolsTableWidget, SIGNAL(itemDoubleClicked(QTableWidgetItem *)), this, SLOT( onTableItemDoubleClicked() ));
   d->ToolsTableWidget->setContextMenuPolicy( Qt::CustomContextMenu );
   connect( d->ToolsTableWidget, SIGNAL( customContextMenuRequested(const QPoint&) ), this, SLOT( onToolsTableContextMenu(const QPoint&) ) );
+
+
 
   this->updateFromMRMLNode();
 }
@@ -170,15 +178,14 @@ void qSlicerWatchdogModuleWidget::onCurrentCellChanged(int currentRow, int curre
     return;
   }
   Q_D( qSlicerWatchdogModuleWidget );
-  vtkMRMLWatchdogNode* watchdogNode = vtkMRMLWatchdogNode::SafeDownCast(d->ModuleNodeComboBox->currentNode());
-  if ( watchdogNode == NULL )
+  if ( d->WatchdogNode == NULL )
   {
     qCritical( "Selected node not a valid module node" );
     return;
   }
 
   std::string label = d->ToolsTableWidget->item(currentRow,currentColumn)->text().toStdString();
-  watchdogNode->SetWatchedNodeDisplayLabel(currentRow, label.c_str());
+  d->WatchdogNode->SetWatchedNodeDisplayLabel(currentRow, label.c_str());
   disconnect( d->ToolsTableWidget, SIGNAL( cellChanged( int , int ) ), this, SLOT( onCurrentCellChanged( int, int ) ) );
   this->updateWidget();
 }
@@ -197,9 +204,13 @@ void qSlicerWatchdogModuleWidget::onTableItemDoubleClicked()
 }
 
 //-----------------------------------------------------------------------------
-void qSlicerWatchdogModuleWidget::onWatchdogNodeChanged()
+void qSlicerWatchdogModuleWidget::onWatchdogNodeSelectionChanged()
 {
   Q_D( qSlicerWatchdogModuleWidget );
+  vtkMRMLWatchdogNode* selectedWatchdogNode = vtkMRMLWatchdogNode::SafeDownCast( d->ModuleNodeComboBox->currentNode() );
+  qvtkReconnect(d->WatchdogNode, selectedWatchdogNode, vtkCommand::ModifiedEvent, this, SLOT(onWatchdogNodeModified()));
+  d->WatchdogNode = selectedWatchdogNode;
+  //this->onWatchdogNodeModified();
   this->updateFromMRMLNode();
 }
 
@@ -207,17 +218,10 @@ void qSlicerWatchdogModuleWidget::onWatchdogNodeChanged()
 void qSlicerWatchdogModuleWidget::updateFromMRMLNode()
 {
   Q_D( qSlicerWatchdogModuleWidget );
-  vtkMRMLNode* currentNode = d->ModuleNodeComboBox->currentNode();
-  if ( currentNode == NULL )
+  if ( d->WatchdogNode == NULL )
   {
     d->ToolComboBox->setCurrentNodeID( "" );
     d->ToolComboBox->setEnabled( false );
-    return;
-  }
-  vtkMRMLWatchdogNode* watchdogNode = vtkMRMLWatchdogNode::SafeDownCast( currentNode );
-  if ( watchdogNode == NULL )
-  {
-    qCritical( "Selected node not a valid module node" );
     return;
   }
   d->ToolComboBox->setEnabled( true );
@@ -225,68 +229,17 @@ void qSlicerWatchdogModuleWidget::updateFromMRMLNode()
 }
 
 //-----------------------------------------------------------------------------
-void  qSlicerWatchdogModuleWidget::updateTable()
-{
-  Q_D( qSlicerWatchdogModuleWidget );
-  vtkMRMLNode* currentNode = d->ModuleNodeComboBox->currentNode();
-  if ( currentNode == NULL )
-  {
-    d->ToolComboBox->setCurrentNodeID( "" );
-    d->ToolComboBox->setEnabled( false );
-    return;
-  }
-  vtkMRMLWatchdogNode* watchdogNode = vtkMRMLWatchdogNode::SafeDownCast( currentNode );
-  if ( watchdogNode == NULL )
-  {
-    qCritical( "Selected node not a valid module node" );
-    return;
-  }
-  int numberOfWatchedNodes = watchdogNode->GetNumberOfWatchedNodes();
-  if ( numberOfWatchedNodes != d->ToolsTableWidget->rowCount())
-  {
-    // TODO: handle this case
-    return;
-  }
-  for (int watchedIndexNode=0; watchedIndexNode<numberOfWatchedNodes; watchedIndexNode++)
-  {
-    d->ToolsTableWidget->blockSignals( true );
-    if(watchdogNode->GetWatchedNodeUpToDate(watchedIndexNode))
-    {
-      d->ToolsTableWidget->item( watchedIndexNode, TOOL_TIMESTAMP_COLUMN)->setText("");
-      d->ToolsTableWidget->item( watchedIndexNode, TOOL_TIMESTAMP_COLUMN)->setBackground(QBrush(QColor(45,224,90)));
-    }
-    else
-    {
-      d->ToolsTableWidget->item( watchedIndexNode, TOOL_TIMESTAMP_COLUMN)->setBackground(Qt::red);
-      QString timeDisconnectedStringSec ("Disconnected ");
-      timeDisconnectedStringSec += QString::number( floor(watchdogNode->GetWatchedNodeElapsedTimeSinceLastUpdateSec(watchedIndexNode)) )+ " [s]";
-      d->ToolsTableWidget->item( watchedIndexNode, TOOL_TIMESTAMP_COLUMN)->setText(timeDisconnectedStringSec);
-    }
-    d->ToolsTableWidget->blockSignals( false );
-    watchedIndexNode++;
-  }
-}
-
-//-----------------------------------------------------------------------------
 void  qSlicerWatchdogModuleWidget::onDownButtonClicked()
 {
   Q_D( qSlicerWatchdogModuleWidget);
-  vtkMRMLNode* currentNode = d->ModuleNodeComboBox->currentNode();
-  if ( currentNode == NULL )
-  {
-    d->ToolComboBox->setCurrentNodeID( "" );
-    d->ToolComboBox->setEnabled( false );
-    return;
-  }
-  vtkMRMLWatchdogNode* watchdogNode = vtkMRMLWatchdogNode::SafeDownCast( currentNode );
-  if ( watchdogNode == NULL )
+  if ( d->WatchdogNode == NULL )
   {
     return;
   }
   int currentTool = d->ToolsTableWidget->currentRow();
-  if ( currentTool < watchdogNode->GetNumberOfWatchedNodes()- 1 && currentTool>=0 )
+  if ( currentTool < d->WatchdogNode->GetNumberOfWatchedNodes()- 1 && currentTool>=0 )
   {
-    watchdogNode->SwapWatchedNodes( currentTool, currentTool + 1 );
+    d->WatchdogNode->SwapWatchedNodes( currentTool, currentTool + 1 );
   }
   updateWidget();
 }
@@ -295,22 +248,14 @@ void  qSlicerWatchdogModuleWidget::onDownButtonClicked()
 void  qSlicerWatchdogModuleWidget::onUpButtonClicked()
 {
   Q_D( qSlicerWatchdogModuleWidget);
-  vtkMRMLNode* currentNode = d->ModuleNodeComboBox->currentNode();
-  if ( currentNode == NULL )
-  {
-    d->ToolComboBox->setCurrentNodeID( "" );
-    d->ToolComboBox->setEnabled( false );
-    return;
-  }
-  vtkMRMLWatchdogNode* watchdogNode = vtkMRMLWatchdogNode::SafeDownCast( currentNode );
-  if ( watchdogNode == NULL )
+  if ( d->WatchdogNode == NULL )
   {
     return;
   }
   int currentTool = d->ToolsTableWidget->currentRow();
   if ( currentTool > 0 )
   {
-    watchdogNode->SwapWatchedNodes( currentTool, currentTool - 1 );
+    d->WatchdogNode->SwapWatchedNodes( currentTool, currentTool - 1 );
   }
   updateWidget();
 }
@@ -330,21 +275,13 @@ void  qSlicerWatchdogModuleWidget::onRemoveToolNode()
       deleteNodes.push_back( i );
     }
   }
-  vtkMRMLNode* currentNode = d->ModuleNodeComboBox->currentNode();
-  if ( currentNode == NULL )
-  {
-    d->ToolComboBox->setCurrentNodeID( "" );
-    d->ToolComboBox->setEnabled( false );
-    return;
-  }
-  vtkMRMLWatchdogNode* watchdogNode = vtkMRMLWatchdogNode::SafeDownCast( currentNode );
-  if ( watchdogNode == NULL )
+  if ( d->WatchdogNode == NULL )
   {
     return;
   }
   for ( int i = deleteNodes.size() - 1; i >= 0; i-- )
   {
-    watchdogNode->RemoveWatchedNode(deleteNodes.at( i ));
+    d->WatchdogNode->RemoveWatchedNode(deleteNodes.at( i ));
   }
   this->updateWidget();
 }
@@ -353,26 +290,16 @@ void  qSlicerWatchdogModuleWidget::onRemoveToolNode()
 void qSlicerWatchdogModuleWidget::onAddToolNode( )
 {
   Q_D(qSlicerWatchdogModuleWidget);
-  vtkMRMLNode* currentNode = d->ModuleNodeComboBox->currentNode();
-  if ( currentNode == NULL )
+  if ( d->WatchdogNode == NULL )
   {
     return;
   }
-
-  vtkMRMLWatchdogNode* watchdogNode = vtkMRMLWatchdogNode::SafeDownCast( currentNode );
-  if ( watchdogNode == NULL )
-  {
-    qCritical( "Selected node not a valid module node" );
-    return;
-  }
-
   vtkMRMLNode* currentToolNode = d->ToolComboBox->currentNode();
   if ( currentToolNode  == NULL )
   {
     return;
   }
-
-  watchdogNode->AddWatchedNode(currentToolNode);
+  d->WatchdogNode->AddWatchedNode(currentToolNode);
   this->updateWidget();
 }
 
@@ -396,16 +323,7 @@ void qSlicerWatchdogModuleWidget::onToolsTableContextMenu(const QPoint& position
 
   QAction* selectedAction = transformsMenu->exec( globalPosition );
 
-  vtkMRMLNode* currentNode = d->ModuleNodeComboBox->currentNode();
-  if ( currentNode == NULL )
-  {
-    d->ToolComboBox->setCurrentNodeID( "" );
-    d->ToolComboBox->setEnabled( false );
-    return;
-  }
-
-  vtkMRMLWatchdogNode* watchdogNode = vtkMRMLWatchdogNode::SafeDownCast( currentNode );
-  if ( watchdogNode == NULL )
+  if ( d->WatchdogNode == NULL )
   {
     return;
   }
@@ -426,7 +344,7 @@ void qSlicerWatchdogModuleWidget::onToolsTableContextMenu(const QPoint& position
     QString toolKey;
     for ( int i = deleteNodes.size() - 1; i >= 0; i-- )
     {
-      watchdogNode->RemoveWatchedNode(deleteNodes.at( i ));
+      d->WatchdogNode->RemoveWatchedNode(deleteNodes.at( i ));
     }
   }
   int currentTool = d->ToolsTableWidget->currentRow();
@@ -434,15 +352,15 @@ void qSlicerWatchdogModuleWidget::onToolsTableContextMenu(const QPoint& position
   {
     if ( currentTool > 0 )
     {
-      watchdogNode->SwapWatchedNodes( currentTool, currentTool - 1 );
+      d->WatchdogNode->SwapWatchedNodes( currentTool, currentTool - 1 );
     }
   }
 
   if ( selectedAction == downAction )
   {
-    if ( currentTool < watchdogNode->GetNumberOfWatchedNodes()- 1 )
+    if ( currentTool < d->WatchdogNode->GetNumberOfWatchedNodes()- 1 )
     {
-      watchdogNode->SwapWatchedNodes( currentTool, currentTool + 1 );
+      d->WatchdogNode->SwapWatchedNodes( currentTool, currentTool + 1 );
     }
   }
   this->updateWidget();
@@ -452,20 +370,12 @@ void qSlicerWatchdogModuleWidget::onToolsTableContextMenu(const QPoint& position
 void qSlicerWatchdogModuleWidget::updateWidget()
 {
   Q_D(qSlicerWatchdogModuleWidget);
-  vtkMRMLNode* currentModuleNode = d->ModuleNodeComboBox->currentNode();
-  if ( currentModuleNode == NULL )
+  if ( d->WatchdogNode == NULL )
   {
     d->ToolComboBox->setCurrentNodeID( "" );
     d->ToolComboBox->setEnabled( false );
-    d->ToolsTableWidget->clear();
+    d->ToolsTableWidget->clearContents();
     d->ToolsTableWidget->setRowCount( 0 );
-    d->ToolsTableWidget->setColumnCount( 0 );
-    return;
-  }
-  vtkMRMLWatchdogNode* watchdogNode = vtkMRMLWatchdogNode::SafeDownCast( currentModuleNode );
-  if ( watchdogNode == NULL )
-  {
-    qCritical( "Selected node not a valid module node" );
     return;
   }
   vtkMRMLDisplayableNode* currentToolNode = vtkMRMLDisplayableNode::SafeDownCast( d->ToolComboBox->currentNode() );
@@ -479,8 +389,8 @@ void qSlicerWatchdogModuleWidget::updateWidget()
   }
   else
   {
-    // Set the button indicating if this list is active
-    if ( !watchdogNode->HasTool(currentToolNode->GetName()))
+    // Only allow adding the selected node if not watched already
+    if (d->WatchdogNode->GetWatchedNodeIndex(currentToolNode)<0)
     {
       d->AddToolButton->setEnabled(true);
     }
@@ -494,60 +404,71 @@ void qSlicerWatchdogModuleWidget::updateWidget()
   // Update the fiducials table
   d->ToolsTableWidget->blockSignals( true );
 
-  for (int row=0; row<d->ToolsTableWidget->rowCount(); row++)
+  int numberOfWatchedNodes = d->WatchdogNode->GetNumberOfWatchedNodes();
+  if (numberOfWatchedNodes > d->ToolsTableWidget->rowCount())
+  {
+    // Add lines to the table
+    int rowStartIndex = d->ToolsTableWidget->rowCount();
+    d->ToolsTableWidget->setRowCount( numberOfWatchedNodes );
+    for (int rowIndex = rowStartIndex; rowIndex < numberOfWatchedNodes; rowIndex++)
+    {
+      QTableWidgetItem* nameItem = new QTableWidgetItem();
+      QTableWidgetItem* labelItem = new QTableWidgetItem();
+      QTableWidgetItem* lastElapsedTimeStatus = new QTableWidgetItem();
+      lastElapsedTimeStatus->setTextAlignment(Qt::AlignCenter);
+      QCheckBox *pCheckBox = new QCheckBox();
+      pCheckBox->setStyleSheet("margin-left:50%; margin-right:50%;");
+      connect(pCheckBox, SIGNAL(stateChanged(int)), this, SLOT(onSoundCheckBoxStateChanged(int)));
+      d->ToolsTableWidget->setItem( rowIndex, TOOL_NAME_COLUMN, nameItem );
+      d->ToolsTableWidget->setItem( rowIndex, TOOL_LABEL_COLUMN, labelItem );
+      d->ToolsTableWidget->setCellWidget(rowIndex, TOOL_SOUND_COLUMN, pCheckBox);
+      d->ToolsTableWidget->setItem( rowIndex, TOOL_TIMESTAMP_COLUMN, lastElapsedTimeStatus );
+    }
+  }
+  else if (numberOfWatchedNodes < d->ToolsTableWidget->rowCount())
+  {
+    // Remove lines from the table
+    d->ToolsTableWidget->setRowCount( numberOfWatchedNodes );
+  }
+
+  /*for (int row=0; row<d->ToolsTableWidget->rowCount(); row++)
   {
     QCheckBox *soundCheckBox = dynamic_cast <QCheckBox *> (d->ToolsTableWidget->cellWidget(row,TOOL_SOUND_COLUMN));
     disconnect(soundCheckBox, SIGNAL(stateChanged(int)), this, SLOT(onSoundCheckBoxStateChanged(int)));
   }
+  */
 
-  d->ToolsTableWidget->clear();
-  QStringList MarkupsTableHeaders;
-  MarkupsTableHeaders << "Label" << "Name" << "Sound" << "Status";
-  d->ToolsTableWidget->setRowCount( watchdogNode->GetNumberOfWatchedNodes() );
-  d->ToolsTableWidget->setColumnCount( TOOL_COLUMNS );
-  d->ToolsTableWidget->setHorizontalHeaderLabels( MarkupsTableHeaders );
-  d->ToolsTableWidget->horizontalHeader()->setResizeMode( QHeaderView::Stretch );
-  std::string fiducialLabel = "";
-
-  std::list<WatchedTool> *toolsVectorPtr = watchdogNode->GetToolNodes();
-  int numberTools= toolsVectorPtr->size();
-  if ( toolsVectorPtr == NULL || numberTools != d->ToolsTableWidget->rowCount())
+  for (int watchedNodeIndex = 0; watchedNodeIndex < numberOfWatchedNodes; watchedNodeIndex++ )
   {
-    return;
-  }
-  int row=0;
-  for (std::list<WatchedTool>::iterator it = toolsVectorPtr->begin() ; it != toolsVectorPtr->end(); ++it)
-  {
-    if((*it).tool==NULL)
+    vtkMRMLNode* watchedNode = d->WatchdogNode->GetWatchedNode(watchedNodeIndex);
+    if (watchedNode==NULL)
     {
-      return;
+      qWarning("Invalid watched node found, cannot update watched node table row");
+      continue;
     }
-    QTableWidgetItem* nameItem = new QTableWidgetItem( (*it).tool->GetName() );
-    QTableWidgetItem* labelItem = new QTableWidgetItem( (*it).label.c_str() );
-    QTableWidgetItem* lastElapsedTimeStatus = new QTableWidgetItem( "" );
-    lastElapsedTimeStatus->setTextAlignment(Qt::AlignCenter);
+    
+    d->ToolsTableWidget->item(watchedNodeIndex, TOOL_NAME_COLUMN)->setText(watchedNode->GetName());
+    d->ToolsTableWidget->item(watchedNodeIndex, TOOL_LABEL_COLUMN)->setText(d->WatchdogNode->GetWatchedNodeDisplayLabel(watchedNodeIndex));
 
-    QCheckBox *pCheckBox = new QCheckBox();
-    pCheckBox->setAccessibleName(QString::number(row));
-    if((*it).playSound)
+    QCheckBox *pCheckBox = qobject_cast<QCheckBox*>(d->ToolsTableWidget->cellWidget(watchedNodeIndex, TOOL_SOUND_COLUMN));
+    if (pCheckBox)
     {
-      pCheckBox->setCheckState(Qt::Checked);
+      pCheckBox->setCheckState(d->WatchdogNode->GetWatchedNodePlaySound(watchedNodeIndex) ? Qt::Checked : Qt::Unchecked);
+      pCheckBox->setAccessibleName(QString::number(watchedNodeIndex));
+    }
+
+    if(d->WatchdogNode->GetWatchedNodeUpToDate(watchedNodeIndex))
+    {
+      d->ToolsTableWidget->item( watchedNodeIndex, TOOL_TIMESTAMP_COLUMN)->setText("valid");
+      d->ToolsTableWidget->item( watchedNodeIndex, TOOL_TIMESTAMP_COLUMN)->setBackground(QBrush(QColor(45,224,90)));
     }
     else
     {
-      pCheckBox->setCheckState(Qt::Unchecked);
+      d->ToolsTableWidget->item( watchedNodeIndex, TOOL_TIMESTAMP_COLUMN)->setBackground(Qt::red);
+      d->ToolsTableWidget->item( watchedNodeIndex, TOOL_TIMESTAMP_COLUMN)->setText("invalid");
     }
-    pCheckBox->setStyleSheet("margin-left:50%; margin-right:50%;");
-    connect(pCheckBox, SIGNAL(stateChanged(int)), this, SLOT(onSoundCheckBoxStateChanged(int)));
-
-    d->ToolsTableWidget->setItem( row, TOOL_TIMESTAMP_COLUMN, lastElapsedTimeStatus );
-    d->ToolsTableWidget->setItem( row, TOOL_NAME_COLUMN, nameItem );
-    d->ToolsTableWidget->setItem( row, TOOL_LABEL_COLUMN, labelItem );
-    d->ToolsTableWidget->setCellWidget(row,TOOL_SOUND_COLUMN, pCheckBox);
-
-    row++;
   }
-  updateTable();
+
   d->ToolsTableWidget->blockSignals( false );
 }
 
@@ -555,25 +476,15 @@ void qSlicerWatchdogModuleWidget::updateWidget()
 void qSlicerWatchdogModuleWidget::onSoundCheckBoxStateChanged(int state)
 {
   Q_D(qSlicerWatchdogModuleWidget);
-
-  vtkMRMLNode* currentNode = d->ModuleNodeComboBox->currentNode();
-  if ( currentNode == NULL )
-  {
-    d->ToolComboBox->setCurrentNodeID( "" );
-    d->ToolComboBox->setEnabled( false );
-    return;
-  }
-  vtkMRMLWatchdogNode* watchdogNode = vtkMRMLWatchdogNode::SafeDownCast( currentNode );
-
-  if ( watchdogNode == NULL )
+  if ( d->WatchdogNode == NULL )
   {
     return;
   }
   QCheckBox *pCheckBox = dynamic_cast <QCheckBox *>(QObject::sender());
   int cbRow = pCheckBox->accessibleName().toInt();
-  if(cbRow>=0&&cbRow<watchdogNode->GetNumberOfWatchedNodes())
+  if(cbRow>=0&&cbRow<d->WatchdogNode->GetNumberOfWatchedNodes())
   {
-    watchdogNode->GetToolNode(cbRow)->playSound=state;
+    d->WatchdogNode->SetWatchedNodePlaySound(cbRow, state != Qt::Unchecked);
   }
 }
 
@@ -581,13 +492,16 @@ void qSlicerWatchdogModuleWidget::onSoundCheckBoxStateChanged(int state)
 void qSlicerWatchdogModuleWidget::onToolBarVisibilityChanged( bool visible )
 {
   Q_D(qSlicerWatchdogModuleWidget);
-  vtkMRMLNode* currentModuleNode = d->ModuleNodeComboBox->currentNode();
-  if ( currentModuleNode == NULL )
+  if ( d->WatchdogNode == NULL )
   {
-    d->ToolComboBox->setCurrentNodeID( "" );
-    d->ToolComboBox->setEnabled( false );
     return;
   }
-  vtkMRMLWatchdogNode* watchdogNode = vtkMRMLWatchdogNode::SafeDownCast( currentModuleNode );
-  watchdogNode->SetVisible(visible);
+  d->WatchdogNode->SetVisible(visible);
+}
+
+
+//-----------------------------------------------------------------------------
+void qSlicerWatchdogModuleWidget::onWatchdogNodeModified()
+{
+  updateWidget();
 }
