@@ -48,7 +48,7 @@ public:
   void PrintSelf(ostream& os, vtkIndent indent);
 
   ///Every time the timer is reached this method updates the tools status and the elapsed time
-  void UpdateAllWatchdogNodes();
+  void UpdateAllWatchdogNodes(bool &watchedNodeBecomeUpToDateSound, bool &watchedNodeBecomeOutdatedSound);
 
   /// Create a new watchdog node and associated display node, adding both to
   /// the scene.

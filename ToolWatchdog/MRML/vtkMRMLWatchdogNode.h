@@ -58,16 +58,13 @@ public:
   /// Watchdog-specific methods
   //--------------------------------------------------------------------------
 
-  vtkSetMacro(Visible, bool);
-  vtkGetMacro(Visible, bool);
-
   /// Returns the number of tools that this node watches
   int GetNumberOfWatchedNodes();
 
-  /// Get the display label of the chosen watched node
-  const char* GetWatchedNodeDisplayLabel(int watchedNodeIndex);
-  /// Set the display label of the chosen watched node
-  void SetWatchedNodeDisplayLabel(int watchedNodeIndex, const char* displayLabel);
+  /// Get the warning message that is displayed if the chosen watched node is outdated
+  const char* GetWatchedNodeWarningMessage(int watchedNodeIndex);
+  /// Set the warning message that is displayed if the chosen watched node is outdated
+  void SetWatchedNodeWarningMessage(int watchedNodeIndex, const char* warningMessage);
 
   /// Get the maximum allowed elapsed time since the last update of the watched node.
   /// If the node is not updated within this time then the node becomes outdated.
@@ -87,16 +84,13 @@ public:
   void SetWatchedNodePlaySound(int watchedNodeIndex, bool playSound);
 
   /// Add a node to be watched. Returns the watched node's index.
-  int AddWatchedNode(vtkMRMLNode *watchedNode, const char* displayLabel=NULL, double updateTimeToleranceSec=-1, bool playSound=false);
+  int AddWatchedNode(vtkMRMLNode *watchedNode, const char* warningMessage=NULL, double updateTimeToleranceSec=-1, bool playSound=false);
 
   /// Remove the specified watched nodes from the list
   void RemoveWatchedNode(int watchedNodeIndex);
 
   /// Remove all the watched nodes
   void RemoveAllWatchedNodes();
-
-  /// Swap the specified tools watched from the tools' list
-  void SwapWatchedNodes( int watchedNodeIndexA, int watchedNodeIndexB );
 
   /// Get the index of the watched node
   /// Returns -1 if the node is not watched.
@@ -112,7 +106,7 @@ public:
   /// Updates the up-to-date status of all watched nodes.
   /// If any of the statuses change then a Modified event is invoked.
   /// A watched node's status is valid if the last update of the node happened not longer time than the update time tolerance.
-  void UpdateWatchedNodesStatus();
+  void UpdateWatchedNodesStatus(bool &watchedNodeBecomeUpToDateSound, bool &watchedNodeBecomeOutdatedSound);
 
 protected:
 
@@ -121,8 +115,6 @@ protected:
   virtual ~vtkMRMLWatchdogNode();
   vtkMRMLWatchdogNode ( const vtkMRMLWatchdogNode& );
   void operator=( const vtkMRMLWatchdogNode& );
-
-  bool Visible;
 
 private:
   class vtkInternal;

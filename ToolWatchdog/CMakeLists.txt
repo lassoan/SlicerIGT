@@ -70,11 +70,16 @@ if(BUILD_TESTING)
 endif()
 
 configure_file(
-  ${CMAKE_CURRENT_SOURCE_DIR}/Resources/alarmWatchdog.wav
-  ${SlicerIGT_BINARY_DIR}/${Slicer_QTLOADABLEMODULES_SHARE_DIR}/${MODULE_NAME}/alarmWatchdog.wav
+  ${CMAKE_CURRENT_SOURCE_DIR}/Resources/WatchedNodeOutdated.wav
+  ${SlicerIGT_BINARY_DIR}/${Slicer_QTLOADABLEMODULES_SHARE_DIR}/${MODULE_NAME}/WatchedNodeOutdated.wav
+  COPYONLY)
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/Resources/WatchedNodeUpToDate.wav 
+  ${SlicerIGT_BINARY_DIR}/${Slicer_QTLOADABLEMODULES_SHARE_DIR}/${MODULE_NAME}/WatchedNodeUpToDate.wav 
   COPYONLY)
 
 install(
-  FILES ${SlicerIGT_BINARY_DIR}/${Slicer_QTLOADABLEMODULES_SHARE_DIR}/${MODULE_NAME}/alarmWatchdog.wav
+  FILES
+    ${SlicerIGT_BINARY_DIR}/${Slicer_QTLOADABLEMODULES_SHARE_DIR}/${MODULE_NAME}/WatchedNodeOutdated.wav
+    ${SlicerIGT_BINARY_DIR}/${Slicer_QTLOADABLEMODULES_SHARE_DIR}/${MODULE_NAME}/WatchedNodeUpToDate.wav
   DESTINATION ${Slicer_INSTALL_QTLOADABLEMODULES_SHARE_DIR}/${MODULE_NAME} COMPONENT Runtime)
-

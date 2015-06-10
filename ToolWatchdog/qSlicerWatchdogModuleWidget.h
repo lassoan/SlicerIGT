@@ -37,12 +37,26 @@ public:
   qSlicerWatchdogModuleWidget(QWidget *parent=0);
   virtual ~qSlicerWatchdogModuleWidget();
 
+  bool visibility()const;
+  int fontSize()const;
+  double opacity()const;
+  QColor backgroundColor()const;
+  QColor textColor()const;
+
 public slots:
 
   /// Set the current MRML scene to the widget
   virtual void setMRMLScene( vtkMRMLScene* scene );
   /// Process loaded scene, updates the table after a scene is set
   void onSceneImportedEvent();
+
+  void setVisibility(bool);
+  void setFontSize(int);
+  void setOpacity(double);
+  void setBackgroundColor(QColor);
+  void setTextColor(QColor);
+
+  void updateMRMLDisplayNodeViewsFromWidget();
 
 protected slots:
 
@@ -59,10 +73,6 @@ protected slots:
   void onTableItemDoubleClicked();
   /// Updates the toolbar accordingly to the label changed on the table
   void onCurrentCellChanged(int currentRow, int currentColumn);
-  /// Swaps the current table row with the lower row
-  void onDownButtonClicked();
-  /// Swaps the current table row with the upper row
-  void onUpButtonClicked();
   /// Deletes the current selected row(s)
   void onRemoveToolNode();
   /// Adds the tool to the watchdog node
@@ -71,8 +81,6 @@ protected slots:
   void onToolsTableContextMenu(const QPoint& position);
   /// Deletes and creates a table. Updates gui accordingly to node state
   void updateWidget();
-  /// Updates the toolbar visibility checkbox accordingly to the toolbar visibility, in case is deactivated from the menu
-  void onToolBarVisibilityChanged( bool visible );
   /// Sets the playSound option of the displayable node accordingly to the table checkbox
   void onSoundCheckBoxStateChanged(int state);
 

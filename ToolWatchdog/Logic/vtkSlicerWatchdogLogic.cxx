@@ -67,8 +67,10 @@ void vtkSlicerWatchdogLogic::SetMRMLSceneInternal(vtkMRMLScene * newScene)
 }
 
 //-----------------------------------------------------------------------------
-void vtkSlicerWatchdogLogic::UpdateAllWatchdogNodes()
+void vtkSlicerWatchdogLogic::UpdateAllWatchdogNodes(bool &watchedNodeBecomeUpToDateSound, bool &watchedNodeBecomeOutdatedSound)
 {
+  watchedNodeBecomeUpToDateSound = false;
+  watchedNodeBecomeOutdatedSound = false;
   vtkMRMLScene* scene = this->GetMRMLScene();
   if (scene==NULL)
   {
@@ -84,7 +86,7 @@ void vtkSlicerWatchdogLogic::UpdateAllWatchdogNodes()
     {
       continue;
     }
-    watchdogNode->UpdateWatchedNodesStatus();
+    watchdogNode->UpdateWatchedNodesStatus(watchedNodeBecomeUpToDateSound, watchedNodeBecomeOutdatedSound);
   }
 }
 

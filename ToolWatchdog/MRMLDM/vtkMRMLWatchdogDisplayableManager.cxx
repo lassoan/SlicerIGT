@@ -85,7 +85,6 @@ public:
   void UpdateDisplayNode(vtkMRMLWatchdogDisplayNode* displayNode);
   void UpdateDisplayNodePipeline(vtkMRMLWatchdogDisplayNode*, const Pipeline*);
   void RemoveDisplayNode(vtkMRMLWatchdogDisplayNode* displayNode);
-  void SetWatchdogDisplayProperty(vtkMRMLWatchdogDisplayNode *displayNode, vtkActor2D* actor);
 
   // Observations
   void AddObservations(vtkMRMLWatchdogNode* node);
@@ -250,6 +249,7 @@ void vtkMRMLWatchdogDisplayableManager::vtkInternal::AddDisplayNode(vtkMRMLWatch
   pipeline->TextActor = vtkSmartPointer<vtkTextActor>::New();
   pipeline->TextActor->GetTextProperty()->SetColor(1, 1, 1);
   pipeline->TextActor->GetTextProperty()->SetBold(1);
+  pipeline->TextActor->GetTextProperty()->SetShadow(1);
   pipeline->TextActor->SetVisibility(false);
 
   pipeline->BackgroundActor = vtkSmartPointer<vtkActor2D>::New();
@@ -324,6 +324,13 @@ void vtkMRMLWatchdogDisplayableManager::vtkInternal::UpdateDisplayNodePipeline(v
     return;
   }
 
+  if ( !this->UseDisplayNode(displayNode) )
+  {
+    pipeline->TextActor->SetVisibility(false);
+    pipeline->BackgroundActor->SetVisibility(false);
+    return;
+  }
+
   vtkMRMLWatchdogNode* watchdogNode=vtkMRMLWatchdogNode::SafeDownCast(displayNode->GetDisplayableNode());
   if (watchdogNode==NULL)
   {
@@ -343,7 +350,7 @@ void vtkMRMLWatchdogDisplayableManager::vtkInternal::UpdateDisplayNodePipeline(v
       {
         displayedText += "\n";
       }
-      displayedText += watchdogNode->GetWatchedNodeDisplayLabel(watchedNodeIndex);
+      displayedText += watchdogNode->GetWatchedNodeWarningMessage(watchedNodeIndex);
     }
   }
   if (displayedText.empty())
@@ -357,7 +364,6 @@ void vtkMRMLWatchdogDisplayableManager::vtkInternal::UpdateDisplayNodePipeline(v
   pipeline->TextActor->GetTextProperty()->SetFontSize(displayNode->GetFontSize());
   int margin = TEXT_MARGIN_PERCENT/100.0*displayNode->GetFontSize();
   pipeline->TextActor->SetPosition(margin, margin);
-  //pipeline->TextActor->SetOrigin2(margin, margin);
 
   double boundingBox[4]={0};
   pipeline->TextActor->GetBoundingBox(this->External->GetRenderer(), boundingBox);
@@ -379,8 +385,22 @@ void vtkMRMLWatchdogDisplayableManager::vtkInternal::UpdateDisplayNodePipeline(v
     return;
   }
 
-  // Update pipeline actor
-  this->SetWatchdogDisplayProperty(displayNode, pipeline->BackgroundActor.GetPointer());
+  // Update properties
+
+  pipeline->BackgroundActor->GetProperty()->SetPointSize(displayNode->GetPointSize());
+  pipeline->BackgroundActor->GetProperty()->SetLineWidth(displayNode->GetLineWidth());
+  pipeline->BackgroundActor->GetProperty()->SetColor(displayNode->GetEdgeColor());
+  pipeline->BackgroundActor->GetProperty()->SetOpacity(displayNode->GetOpacity());
+  if (displayNode->GetSelected())
+  {
+    pipeline->TextActor->GetTextProperty()->SetColor(displayNode->GetSelectedColor());
+  }
+  else
+  {
+    pipeline->TextActor->GetTextProperty()->SetColor(displayNode->GetColor());
+  }
+
+
 }
 
 //---------------------------------------------------------------------------
@@ -437,23 +457,6 @@ bool vtkMRMLWatchdogDisplayableManager::vtkInternal::UseDisplayableNode(vtkMRMLW
 {
   bool use = node && node->IsA("vtkMRMLWatchdogNode");
   return use;
-}
-
-//---------------------------------------------------------------------------
-void vtkMRMLWatchdogDisplayableManager::vtkInternal::SetWatchdogDisplayProperty(vtkMRMLWatchdogDisplayNode *displayNode, vtkActor2D* actor)
-{
-  actor->GetProperty()->SetPointSize(displayNode->GetPointSize());
-  actor->GetProperty()->SetLineWidth(displayNode->GetLineWidth());
-
-  if (displayNode->GetSelected())
-  {
-    actor->GetProperty()->SetColor(displayNode->GetSelectedColor());
-  }
-  else
-  {
-    actor->GetProperty()->SetColor(displayNode->GetColor());
-  }
-  actor->GetProperty()->SetOpacity(displayNode->GetOpacity());
 }
 
 //---------------------------------------------------------------------------

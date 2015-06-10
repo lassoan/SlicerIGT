@@ -24,14 +24,16 @@ limitations under the License.
 #include "qSlicerWatchdogModuleWidget.h"
 #include "ui_qSlicerWatchdogModuleWidget.h"
 
+#include "vtkMRMLAbstractViewNode.h"
 #include "vtkMRMLDisplayableNode.h"
-#include "vtkSlicerWatchdogLogic.h"
 #include "vtkMRMLWatchdogNode.h"
+#include "vtkMRMLWatchdogDisplayNode.h"
+#include "vtkSlicerWatchdogLogic.h"
 
-int TOOL_LABEL_COLUMN = 0;
-int TOOL_NAME_COLUMN = 1;
+int TOOL_NAME_COLUMN = 0;
+int TOOL_MESSAGE_COLUMN = 1;
 int TOOL_SOUND_COLUMN = 2;
-int TOOL_TIMESTAMP_COLUMN = 3;
+int TOOL_STATUS_COLUMN = 3;
 int TOOL_COLUMNS = 4;
 
 //-----------------------------------------------------------------------------
@@ -45,6 +47,7 @@ protected:
 public:
   qSlicerWatchdogModuleWidgetPrivate( qSlicerWatchdogModuleWidget& object );
   vtkSlicerWatchdogLogic* logic() const;
+  vtkMRMLWatchdogDisplayNode* displayNode() const;
 
   vtkWeakPointer<vtkMRMLWatchdogNode> WatchdogNode;
 };
@@ -64,6 +67,20 @@ vtkSlicerWatchdogLogic* qSlicerWatchdogModuleWidgetPrivate::logic() const
   Q_Q( const qSlicerWatchdogModuleWidget );
   return vtkSlicerWatchdogLogic::SafeDownCast( q->logic() );
 }
+
+//-----------------------------------------------------------------------------
+vtkMRMLWatchdogDisplayNode* qSlicerWatchdogModuleWidgetPrivate::displayNode() const
+{
+  Q_Q( const qSlicerWatchdogModuleWidget );
+  if ( this->WatchdogNode == NULL )
+  {
+    return NULL;
+  }
+  vtkMRMLWatchdogDisplayNode* displayNode = vtkMRMLWatchdogDisplayNode::SafeDownCast(this->WatchdogNode->GetDisplayNode());
+  return displayNode;
+}
+
+ 
 
 //-----------------------------------------------------------------------------
 // qSlicerWatchdogModuleWidget methods
@@ -96,28 +113,33 @@ void qSlicerWatchdogModuleWidget::setup()
 
   connect( d->ToolComboBox, SIGNAL( currentNodeChanged( vtkMRMLNode* ) ), this, SLOT( updateWidget() ) );
 
-  connect( d->ToolBarVisibilityCheckBox, SIGNAL( toggled(bool) ), this, SLOT( onToolBarVisibilityChanged(bool) ) );
-  d->ToolBarVisibilityCheckBox->setChecked(true);
-
   connect( d->AddToolButton, SIGNAL( clicked() ), this, SLOT( onAddToolNode() ) );
   connect( d->DeleteToolButton, SIGNAL( clicked() ), this, SLOT( onRemoveToolNode()) );
   d->DeleteToolButton->setIcon( QIcon( ":/Icons/MarkupsDelete.png" ) );
-  connect( d->UpToolButton, SIGNAL( clicked() ), this, SLOT( onUpButtonClicked()) );
-  d->UpToolButton->setIcon( QIcon( ":/Icons/MarkupsMoveUp.png" ) );
-  connect( d->DownToolButton, SIGNAL( clicked() ), this, SLOT( onDownButtonClicked()) );
-  d->DownToolButton->setIcon( QIcon( ":/Icons/MarkupsMoveDown.png" ) );
 
   QStringList MarkupsTableHeaders;
-  MarkupsTableHeaders << "Label" << "Name" << "Sound" << "Status";
+  MarkupsTableHeaders << "Name" << "Message" << "Sound" << "Status";
   d->ToolsTableWidget->setColumnCount( TOOL_COLUMNS );
   d->ToolsTableWidget->setHorizontalHeaderLabels( MarkupsTableHeaders );
-  d->ToolsTableWidget->horizontalHeader()->setResizeMode( QHeaderView::Stretch );
+  d->ToolsTableWidget->horizontalHeader()->setResizeMode( QHeaderView::ResizeToContents );
+  d->ToolsTableWidget->horizontalHeader()->setResizeMode(TOOL_MESSAGE_COLUMN, QHeaderView::Stretch);
+  
 
   connect(d->ToolsTableWidget, SIGNAL(itemDoubleClicked(QTableWidgetItem *)), this, SLOT( onTableItemDoubleClicked() ));
   d->ToolsTableWidget->setContextMenuPolicy( Qt::CustomContextMenu );
   connect( d->ToolsTableWidget, SIGNAL( customContextMenuRequested(const QPoint&) ), this, SLOT( onToolsTableContextMenu(const QPoint&) ) );
 
+  // Display
 
+  QObject::connect(d->VisibilityCheckBox, SIGNAL(toggled(bool)), this, SLOT(setVisibility(bool)));
+  QObject::connect(d->FontSizeSpinBox, SIGNAL(valueChanged(int)), this, SLOT(setFontSize(int)));
+  QObject::connect(d->OpacitySliderWidget, SIGNAL(valueChanged(double)), this, SLOT(setOpacity(double)));
+  QObject::connect(d->BackgroundColorPickerButton, SIGNAL(colorChanged(QColor)), this, SLOT(setBackgroundColor(QColor)));
+  QObject::connect(d->TextColorPickerButton, SIGNAL(colorChanged(QColor)), this, SLOT(setTextColor(QColor)));
+
+  QObject::connect(d->DisplayNodeViewComboBox, SIGNAL(checkedNodesChanged()), this, SLOT(updateMRMLDisplayNodeViewsFromWidget()));
+  QObject::connect(d->DisplayNodeViewComboBox, SIGNAL(nodeAdded(vtkMRMLNode*)), this, SLOT(updateMRMLDisplayNodeViewsFromWidget()));
+  QObject::connect(d->DisplayNodeViewComboBox, SIGNAL(nodeAboutToBeRemoved(vtkMRMLNode*)), this, SLOT(updateMRMLDisplayNodeViewsFromWidget()));
 
   this->updateFromMRMLNode();
 }
@@ -184,8 +206,8 @@ void qSlicerWatchdogModuleWidget::onCurrentCellChanged(int currentRow, int curre
     return;
   }
 
-  std::string label = d->ToolsTableWidget->item(currentRow,currentColumn)->text().toStdString();
-  d->WatchdogNode->SetWatchedNodeDisplayLabel(currentRow, label.c_str());
+  std::string message = d->ToolsTableWidget->item(currentRow,currentColumn)->text().toStdString();
+  d->WatchdogNode->SetWatchedNodeWarningMessage(currentRow, message.c_str());
   disconnect( d->ToolsTableWidget, SIGNAL( cellChanged( int , int ) ), this, SLOT( onCurrentCellChanged( int, int ) ) );
   this->updateWidget();
 }
@@ -225,38 +247,6 @@ void qSlicerWatchdogModuleWidget::updateFromMRMLNode()
     return;
   }
   d->ToolComboBox->setEnabled( true );
-  updateWidget();
-}
-
-//-----------------------------------------------------------------------------
-void  qSlicerWatchdogModuleWidget::onDownButtonClicked()
-{
-  Q_D( qSlicerWatchdogModuleWidget);
-  if ( d->WatchdogNode == NULL )
-  {
-    return;
-  }
-  int currentTool = d->ToolsTableWidget->currentRow();
-  if ( currentTool < d->WatchdogNode->GetNumberOfWatchedNodes()- 1 && currentTool>=0 )
-  {
-    d->WatchdogNode->SwapWatchedNodes( currentTool, currentTool + 1 );
-  }
-  updateWidget();
-}
-
-//-----------------------------------------------------------------------------
-void  qSlicerWatchdogModuleWidget::onUpButtonClicked()
-{
-  Q_D( qSlicerWatchdogModuleWidget);
-  if ( d->WatchdogNode == NULL )
-  {
-    return;
-  }
-  int currentTool = d->ToolsTableWidget->currentRow();
-  if ( currentTool > 0 )
-  {
-    d->WatchdogNode->SwapWatchedNodes( currentTool, currentTool - 1 );
-  }
   updateWidget();
 }
 
@@ -313,13 +303,9 @@ void qSlicerWatchdogModuleWidget::onToolsTableContextMenu(const QPoint& position
   QMenu* transformsMenu = new QMenu( d->ToolsTableWidget );
   QAction* activateAction = new QAction( "Make list active", transformsMenu );
   QAction* deleteAction = new QAction( "Delete highlighted row", transformsMenu );
-  QAction* upAction = new QAction( "Move current element up", transformsMenu );
-  QAction* downAction = new QAction( "Move current row down", transformsMenu );
 
   transformsMenu->addAction( activateAction );
   transformsMenu->addAction( deleteAction );
-  transformsMenu->addAction( upAction );
-  transformsMenu->addAction( downAction );
 
   QAction* selectedAction = transformsMenu->exec( globalPosition );
 
@@ -346,24 +332,8 @@ void qSlicerWatchdogModuleWidget::onToolsTableContextMenu(const QPoint& position
     {
       d->WatchdogNode->RemoveWatchedNode(deleteNodes.at( i ));
     }
+    this->updateWidget();
   }
-  int currentTool = d->ToolsTableWidget->currentRow();
-  if ( selectedAction == upAction )
-  {
-    if ( currentTool > 0 )
-    {
-      d->WatchdogNode->SwapWatchedNodes( currentTool, currentTool - 1 );
-    }
-  }
-
-  if ( selectedAction == downAction )
-  {
-    if ( currentTool < d->WatchdogNode->GetNumberOfWatchedNodes()- 1 )
-    {
-      d->WatchdogNode->SwapWatchedNodes( currentTool, currentTool + 1 );
-    }
-  }
-  this->updateWidget();
 }
 
 //-----------------------------------------------------------------------------
@@ -378,6 +348,23 @@ void qSlicerWatchdogModuleWidget::updateWidget()
     d->ToolsTableWidget->setRowCount( 0 );
     return;
   }
+
+  // Display section
+
+  vtkMRMLWatchdogDisplayNode* displayNode = d->displayNode();
+  if (displayNode)
+  {
+    d->VisibilityCheckBox->setChecked(displayNode->GetVisibility());
+    d->DisplayNodeViewComboBox->setMRMLDisplayNode(displayNode);
+    d->OpacitySliderWidget->setValue(displayNode->GetOpacity());
+    double color[3]={0};
+    displayNode->GetColor(color);
+    d->TextColorPickerButton->setColor(QColor(color[0]*255, color[1]*255, color[2]*255));
+    displayNode->GetEdgeColor(color);
+    d->BackgroundColorPickerButton->setColor(QColor(color[0]*255, color[1]*255, color[2]*255));
+    d->FontSizeSpinBox->setValue(displayNode->GetFontSize());
+  }
+
   vtkMRMLDisplayableNode* currentToolNode = vtkMRMLDisplayableNode::SafeDownCast( d->ToolComboBox->currentNode() );
   d->AddToolButton->blockSignals( true );
   if ( currentToolNode == NULL )
@@ -413,16 +400,43 @@ void qSlicerWatchdogModuleWidget::updateWidget()
     for (int rowIndex = rowStartIndex; rowIndex < numberOfWatchedNodes; rowIndex++)
     {
       QTableWidgetItem* nameItem = new QTableWidgetItem();
-      QTableWidgetItem* labelItem = new QTableWidgetItem();
-      QTableWidgetItem* lastElapsedTimeStatus = new QTableWidgetItem();
-      lastElapsedTimeStatus->setTextAlignment(Qt::AlignCenter);
-      QCheckBox *pCheckBox = new QCheckBox();
-      pCheckBox->setStyleSheet("margin-left:50%; margin-right:50%;");
-      connect(pCheckBox, SIGNAL(stateChanged(int)), this, SLOT(onSoundCheckBoxStateChanged(int)));
+      nameItem->setFlags(nameItem->flags() & (~Qt::ItemIsEditable));
       d->ToolsTableWidget->setItem( rowIndex, TOOL_NAME_COLUMN, nameItem );
-      d->ToolsTableWidget->setItem( rowIndex, TOOL_LABEL_COLUMN, labelItem );
+
+      QTableWidgetItem* messageItem = new QTableWidgetItem();
+      d->ToolsTableWidget->setItem( rowIndex, TOOL_MESSAGE_COLUMN, messageItem );
+
+      // Need to put the icon into a label to allow alignment in the center
+      QWidget *pStatusIconWidget = new QWidget();
+      QLabel *label = new QLabel;
+      label->setObjectName("StatusIcon");
+      //label->setPixmap(QPixmap(":/Icons/NodeValid.png"));
+      QHBoxLayout *pStatusLayout = new QHBoxLayout(pStatusIconWidget);
+      pStatusLayout->addWidget(label);
+      pStatusLayout->setAlignment(Qt::AlignCenter);
+      pStatusLayout->setContentsMargins(0,0,0,0);
+      pStatusIconWidget->setLayout(pStatusLayout);
+      d->ToolsTableWidget->setCellWidget( rowIndex, TOOL_STATUS_COLUMN, pStatusIconWidget);
+
+      QWidget *pSoundWidget = new QWidget();
+      QCheckBox *pCheckBox = new QCheckBox();
+      pCheckBox->setObjectName("Sound");
+      QHBoxLayout *pSoundLayout = new QHBoxLayout(pSoundWidget);
+      pSoundLayout->addWidget(pCheckBox);
+      pSoundLayout->setAlignment(Qt::AlignCenter);
+      //pSoundLayout->setContentsMargins(0,0,0,0);
+      pCheckBox->setStyleSheet("margin-left:2px; margin-right:2px;");
+      pSoundWidget->setLayout(pSoundLayout);
+      d->ToolsTableWidget->setCellWidget( rowIndex, TOOL_SOUND_COLUMN, pSoundWidget);
+
+/*
+      QCheckBox *pCheckBox = new QCheckBox();
+      
       d->ToolsTableWidget->setCellWidget(rowIndex, TOOL_SOUND_COLUMN, pCheckBox);
-      d->ToolsTableWidget->setItem( rowIndex, TOOL_TIMESTAMP_COLUMN, lastElapsedTimeStatus );
+*/
+
+      
+      connect(pCheckBox, SIGNAL(stateChanged(int)), this, SLOT(onSoundCheckBoxStateChanged(int)));
     }
   }
   else if (numberOfWatchedNodes < d->ToolsTableWidget->rowCount())
@@ -448,24 +462,37 @@ void qSlicerWatchdogModuleWidget::updateWidget()
     }
     
     d->ToolsTableWidget->item(watchedNodeIndex, TOOL_NAME_COLUMN)->setText(watchedNode->GetName());
-    d->ToolsTableWidget->item(watchedNodeIndex, TOOL_LABEL_COLUMN)->setText(d->WatchdogNode->GetWatchedNodeDisplayLabel(watchedNodeIndex));
+    d->ToolsTableWidget->item(watchedNodeIndex, TOOL_MESSAGE_COLUMN)->setText(d->WatchdogNode->GetWatchedNodeWarningMessage(watchedNodeIndex));
 
-    QCheckBox *pCheckBox = qobject_cast<QCheckBox*>(d->ToolsTableWidget->cellWidget(watchedNodeIndex, TOOL_SOUND_COLUMN));
+    //QCheckBox *pCheckBox = qobject_cast<QCheckBox*>(d->ToolsTableWidget->cellWidget(watchedNodeIndex, TOOL_SOUND_COLUMN));
+    QCheckBox* pCheckBox = d->ToolsTableWidget->cellWidget( watchedNodeIndex, TOOL_SOUND_COLUMN)->findChild<QCheckBox*>("Sound");
     if (pCheckBox)
     {
       pCheckBox->setCheckState(d->WatchdogNode->GetWatchedNodePlaySound(watchedNodeIndex) ? Qt::Checked : Qt::Unchecked);
       pCheckBox->setAccessibleName(QString::number(watchedNodeIndex));
     }
 
-    if(d->WatchdogNode->GetWatchedNodeUpToDate(watchedNodeIndex))
+    QLabel* statusIcon = d->ToolsTableWidget->cellWidget( watchedNodeIndex, TOOL_STATUS_COLUMN)->findChild<QLabel*>("StatusIcon");
+    if (statusIcon)
     {
-      d->ToolsTableWidget->item( watchedNodeIndex, TOOL_TIMESTAMP_COLUMN)->setText("valid");
-      d->ToolsTableWidget->item( watchedNodeIndex, TOOL_TIMESTAMP_COLUMN)->setBackground(QBrush(QColor(45,224,90)));
-    }
-    else
-    {
-      d->ToolsTableWidget->item( watchedNodeIndex, TOOL_TIMESTAMP_COLUMN)->setBackground(Qt::red);
-      d->ToolsTableWidget->item( watchedNodeIndex, TOOL_TIMESTAMP_COLUMN)->setText("invalid");
+      if(d->WatchdogNode->GetWatchedNodeUpToDate(watchedNodeIndex))
+      {
+        //d->ToolsTableWidget->item( watchedNodeIndex, TOOL_STATUS_COLUMN)->setIcon( QIcon( ":/Icons/NodeValid.png" ) );
+        statusIcon->setPixmap(QPixmap(":/Icons/NodeValid.png"));
+        /*
+        d->ToolsTableWidget->item( watchedNodeIndex, TOOL_STATUS_COLUMN)->setText("valid");
+        d->ToolsTableWidget->item( watchedNodeIndex, TOOL_STATUS_COLUMN)->setBackground(QBrush(QColor(45,224,90)));
+        */
+      }
+      else
+      {
+        statusIcon->setPixmap(QPixmap(":/Icons/NodeInvalid.png"));
+        //d->ToolsTableWidget->item( watchedNodeIndex, TOOL_STATUS_COLUMN)->setIcon( QIcon( ":/Icons/NodeInvalid.png" ) );
+        /*
+        d->ToolsTableWidget->item( watchedNodeIndex, TOOL_STATUS_COLUMN)->setBackground(Qt::red);
+        d->ToolsTableWidget->item( watchedNodeIndex, TOOL_STATUS_COLUMN)->setText("invalid");
+        */
+      }
     }
   }
 
@@ -489,19 +516,139 @@ void qSlicerWatchdogModuleWidget::onSoundCheckBoxStateChanged(int state)
 }
 
 //-----------------------------------------------------------------------------
-void qSlicerWatchdogModuleWidget::onToolBarVisibilityChanged( bool visible )
-{
-  Q_D(qSlicerWatchdogModuleWidget);
-  if ( d->WatchdogNode == NULL )
-  {
-    return;
-  }
-  d->WatchdogNode->SetVisible(visible);
-}
-
-
-//-----------------------------------------------------------------------------
 void qSlicerWatchdogModuleWidget::onWatchdogNodeModified()
 {
   updateWidget();
+}
+
+//------------------------------------------------------------------------------
+void qSlicerWatchdogModuleWidget::setVisibility(bool visible)
+{
+  Q_D(qSlicerWatchdogModuleWidget);
+  vtkMRMLWatchdogDisplayNode* displayNode = d->displayNode();
+  if (!displayNode)
+    {
+    qWarning("qSlicerWatchdogModuleWidget::setVisibility failed: no display node is available");
+    return;
+    }
+  displayNode->SetVisibility(visible);
+}
+
+//------------------------------------------------------------------------------
+bool qSlicerWatchdogModuleWidget::visibility()const
+{
+  Q_D(const qSlicerWatchdogModuleWidget);
+  return d->VisibilityCheckBox->isChecked();
+}
+
+//------------------------------------------------------------------------------
+void qSlicerWatchdogModuleWidget::setFontSize(int fontSize)
+{
+  Q_D(qSlicerWatchdogModuleWidget);
+  vtkMRMLWatchdogDisplayNode* displayNode = d->displayNode();
+  if (!displayNode)
+    {
+    qWarning("qSlicerWatchdogModuleWidget::setFontSize failed: no display node is available");
+    return;
+    }
+  displayNode->SetFontSize(fontSize);
+}
+
+//------------------------------------------------------------------------------
+int qSlicerWatchdogModuleWidget::fontSize()const
+{
+  Q_D(const qSlicerWatchdogModuleWidget);
+  return d->FontSizeSpinBox->value();
+}
+
+//------------------------------------------------------------------------------
+void qSlicerWatchdogModuleWidget::setOpacity(double opacity)
+{
+  Q_D(qSlicerWatchdogModuleWidget);
+  vtkMRMLWatchdogDisplayNode* displayNode = d->displayNode();
+  if (!displayNode)
+    {
+    qWarning("qSlicerWatchdogModuleWidget::setOpacity failed: no display node is available");
+    return;
+    }
+  displayNode->SetOpacity(opacity);
+}
+
+//------------------------------------------------------------------------------
+double qSlicerWatchdogModuleWidget::opacity()const
+{
+  Q_D(const qSlicerWatchdogModuleWidget);
+  return d->OpacitySliderWidget->value();
+}
+
+//------------------------------------------------------------------------------
+void qSlicerWatchdogModuleWidget::setBackgroundColor(QColor color)
+{
+  Q_D(qSlicerWatchdogModuleWidget);
+  vtkMRMLWatchdogDisplayNode* displayNode = d->displayNode();
+  if (!displayNode)
+    {
+    qWarning("qSlicerWatchdogModuleWidget::setBackgroundColor failed: no display node is available");
+    return;
+    }
+  displayNode->SetEdgeColor(color.redF(), color.greenF(), color.blueF());
+}
+
+//------------------------------------------------------------------------------
+QColor qSlicerWatchdogModuleWidget::backgroundColor()const
+{
+  Q_D(const qSlicerWatchdogModuleWidget);
+  return d->BackgroundColorPickerButton->color();
+}
+
+//------------------------------------------------------------------------------
+void qSlicerWatchdogModuleWidget::setTextColor(QColor color)
+{
+  Q_D(qSlicerWatchdogModuleWidget);
+  vtkMRMLWatchdogDisplayNode* displayNode = d->displayNode();
+  if (!displayNode)
+    {
+    qWarning("qSlicerWatchdogModuleWidget::setTextColor failed: no display node is available");
+    return;
+    }
+  displayNode->SetColor(color.redF(), color.greenF(), color.blueF());
+}
+
+//------------------------------------------------------------------------------
+QColor qSlicerWatchdogModuleWidget::textColor()const
+{
+  Q_D(const qSlicerWatchdogModuleWidget);
+  return d->TextColorPickerButton->color();
+}
+
+// --------------------------------------------------------------------------
+void qSlicerWatchdogModuleWidget::updateMRMLDisplayNodeViewsFromWidget()
+{
+  Q_D(qSlicerWatchdogModuleWidget);
+
+  vtkMRMLWatchdogDisplayNode* displayNode = d->displayNode();
+  if (!displayNode)
+    {
+    qWarning("qSlicerWatchdogModuleWidget::updateMRMLDisplayNodeViewsFromWidget failed: no display node is available");
+    return;
+    }
+  int wasModifying = displayNode->StartModify();
+
+  if (d->DisplayNodeViewComboBox->allChecked() || d->DisplayNodeViewComboBox->noneChecked())
+    {
+    displayNode->RemoveAllViewNodeIDs();
+    }
+  else
+    {
+    foreach (vtkMRMLAbstractViewNode* viewNode, d->DisplayNodeViewComboBox->checkedViewNodes())
+      {
+      displayNode->AddViewNodeID(viewNode ? viewNode->GetID() : 0);
+      }
+    foreach (vtkMRMLAbstractViewNode* viewNode, d->DisplayNodeViewComboBox->uncheckedViewNodes())
+      {
+      displayNode->RemoveViewNodeID(viewNode ? viewNode->GetID() : 0);
+      }
+    }
+
+  displayNode->EndModify(wasModifying);
 }

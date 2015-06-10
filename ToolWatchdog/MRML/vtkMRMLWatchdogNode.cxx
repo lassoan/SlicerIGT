@@ -26,7 +26,7 @@ public:
 
   struct WatchedNode
   {
-    std::string displayLabel;
+    std::string warningMessage;
     double lastUpdateTimeSec; // time of the last update in universal time (UTC)
     double updateTimeToleranceSec; // if no update is received for more than the tolerance value then the tool is reported as invalid
     bool playSound;
@@ -37,7 +37,7 @@ public:
       lastUpdateTimeSec=vtkTimerLog::GetUniversalTime();
       playSound=false;
       updateTimeToleranceSec=1.0;
-      lastStateUpToDate = false;
+      lastStateUpToDate = true; // don't show anything by default (to prevent a warning popping up when adding a watched node until its first update)
     }
   };
 
@@ -54,8 +54,6 @@ vtkMRMLWatchdogNode::vtkMRMLWatchdogNode()
   this->Internal = new vtkInternal;
   this->HideFromEditorsOff();
   this->SetSaveWithScene( true );
-
-  this->Visible = true;
 
   vtkNew<vtkIntArray> events;
   events->InsertNextValue(vtkCommand::ModifiedEvent);
@@ -76,7 +74,7 @@ void vtkMRMLWatchdogNode::WriteXML( ostream& of, int nIndent )
   Superclass::WriteXML(of, nIndent); // This will take care of referenced nodes
   vtkIndent indent(nIndent);
 
-  std::ostringstream displayLabelsAttribute;
+  std::ostringstream warningMessagesAttribute;
   std::ostringstream playSoundAttribute;
   std::ostringstream updateTimeToleranceSecAttribute;
   for (std::vector<vtkMRMLWatchdogNode::vtkInternal::WatchedNode>::iterator
@@ -84,16 +82,16 @@ void vtkMRMLWatchdogNode::WriteXML( ostream& of, int nIndent )
   {
     if (it != this->Internal->WatchedNodes.begin())
     {
-      displayLabelsAttribute << ";";
+      warningMessagesAttribute << ";";
       playSoundAttribute << ";";
       updateTimeToleranceSecAttribute << ";";
     }
-    displayLabelsAttribute << it->displayLabel;
+    warningMessagesAttribute << it->warningMessage;
     playSoundAttribute << (it->playSound ? "true" : "false");
     updateTimeToleranceSecAttribute << it->updateTimeToleranceSec;
   }
 
-  of << indent << " watchedNodeDisplayLabel=\"" << displayLabelsAttribute.str() << "\"";
+  of << indent << " watchedNodeWarningMessage=\"" << warningMessagesAttribute.str() << "\"";
   of << indent << " watchedNodePlaySound=\"" << playSoundAttribute.str() << "\"";
   of << indent << " watchedNodeUpdateTimeToleranceSec=\"" << updateTimeToleranceSecAttribute.str() << "\"";
 }
@@ -111,14 +109,15 @@ void vtkMRMLWatchdogNode::ReadXMLAttributes( const char** atts )
   {
     const char* attName  = *(atts++);
     const char* attValue = *(atts++);
-    if (!strcmp(attName, "watchedNodeDisplayLabel"))
+    if (!strcmp(attName, "watchedNodeWarningMessage"))
     {
       std::stringstream attributes(attValue);
       std::string attribute;
       int watchedNodeIndex=0;
       while (std::getline(attributes, attribute, ';') && watchedNodeIndex<numberOfWatchedNodes)
       {
-        this->Internal->WatchedNodes[watchedNodeIndex].displayLabel = attribute;
+        this->Internal->WatchedNodes[watchedNodeIndex].warningMessage = attribute;
+        watchedNodeIndex++;
       }
     }
     else if (!strcmp(attName, "watchedNodePlaySound"))
@@ -130,6 +129,7 @@ void vtkMRMLWatchdogNode::ReadXMLAttributes( const char** atts )
       {
         bool playSound = (attribute.compare("true")==0);
         this->Internal->WatchedNodes[watchedNodeIndex].playSound = playSound;
+        watchedNodeIndex++;
       }
     }
     else if (!strcmp(attName, "watchedNodeUpdateTimeToleranceSec"))
@@ -144,9 +144,11 @@ void vtkMRMLWatchdogNode::ReadXMLAttributes( const char** atts )
         double updateTimeToleranceSec=1.0;
         ss >> updateTimeToleranceSec; 
         this->Internal->WatchedNodes[watchedNodeIndex].updateTimeToleranceSec = updateTimeToleranceSec;
+        watchedNodeIndex++;
       }
     }
   }
+  this->Modified();
 }
 
 //----------------------------------------------------------------------------
@@ -175,7 +177,7 @@ void vtkMRMLWatchdogNode::PrintSelf( ostream& os, vtkIndent indent )
     os << indent << "Referenced node ["<<watchedNodeIndex<<"]" << std::endl;
     const char* nodeId = this->GetNthNodeReferenceID(WATCHED_NODE_REFERENCE_ROLE_NAME, watchedNodeIndex);
     os << indent << " Node ID: " << (nodeId?nodeId:"(undefined)") << std::endl;
-    os << indent << " DisplayLabel: " << it->displayLabel << std::endl;
+    os << indent << " WarningMessage: " << it->warningMessage << std::endl;
     os << indent << " PlaySound: " << (it->playSound?"true":"false") << std::endl;
     os << indent << " UpdateTimeToleranceSec: " << it->updateTimeToleranceSec << std::endl;
     os << indent << " LastStateUpToDate: " << it->lastStateUpToDate << std::endl;
@@ -183,7 +185,7 @@ void vtkMRMLWatchdogNode::PrintSelf( ostream& os, vtkIndent indent )
 }
 
 //----------------------------------------------------------------------------
-int vtkMRMLWatchdogNode::AddWatchedNode(vtkMRMLNode *watchedNode, const char* displayLabel/*=NULL*/,
+int vtkMRMLWatchdogNode::AddWatchedNode(vtkMRMLNode *watchedNode, const char* warningMessage/*=NULL*/,
                                         double updateTimeToleranceSec/*=-1*/, bool playSound/*=false*/)
 {
   if (watchedNode==NULL)
@@ -194,17 +196,16 @@ int vtkMRMLWatchdogNode::AddWatchedNode(vtkMRMLNode *watchedNode, const char* di
 
   vtkMRMLWatchdogNode::vtkInternal::WatchedNode newWatchedNodeInfo;
 
-  if (displayLabel)
+  if (warningMessage)
   {
-    newWatchedNodeInfo.displayLabel = displayLabel;
+    newWatchedNodeInfo.warningMessage = warningMessage;
   }
   else
   {
     const char* watchedNodeName = watchedNode->GetName();
     if (watchedNodeName!=NULL)
     {
-      std::string label = watchedNodeName;
-      newWatchedNodeInfo.displayLabel = label.substr(0,5); // use the first 5 character of the node name as default name
+      newWatchedNodeInfo.warningMessage = std::string(watchedNodeName) + " is not up-to-date";
     }
   }
 
@@ -243,33 +244,11 @@ void vtkMRMLWatchdogNode::RemoveAllWatchedNodes()
 }
 
 //----------------------------------------------------------------------------
-void vtkMRMLWatchdogNode::SwapWatchedNodes( int watchedNodeIndexA, int watchedNodeIndexB )
-{
-  if(watchedNodeIndexA<0 || watchedNodeIndexA>=this->Internal->WatchedNodes.size())
-  {
-    vtkErrorMacro("vtkMRMLWatchdogNode::RemoveWatchedNode failed: invalid watchedNodeIndexA "<<watchedNodeIndexA);
-    return;
-  }
-  if(watchedNodeIndexB<0 || watchedNodeIndexB>=this->Internal->WatchedNodes.size())
-  {
-    vtkErrorMacro("vtkMRMLWatchdogNode::RemoveWatchedNode failed: invalid watchedNodeIndexB "<<watchedNodeIndexB);
-    return;
-  }
-
-  std::vector<vtkMRMLWatchdogNode::vtkInternal::WatchedNode>::iterator itA = this->Internal->WatchedNodes.begin()+watchedNodeIndexA;
-  std::vector<vtkMRMLWatchdogNode::vtkInternal::WatchedNode>::iterator itB = this->Internal->WatchedNodes.begin()+watchedNodeIndexB;
-
-  vtkMRMLWatchdogNode::vtkInternal::WatchedNode watchedNodeInfoTemp = *itA;
-  *itA = *itB;
-  *itB = watchedNodeInfoTemp;
-}
-
-//----------------------------------------------------------------------------
 int vtkMRMLWatchdogNode::GetWatchedNodeIndex(vtkMRMLNode* watchedNode)
 {
   if (watchedNode==NULL)
   {
-    vtkErrorMacro("vtkMRMLWatchdogNode::FindWatchedNodeByDisplayLabel: invalid input node");
+    vtkErrorMacro("vtkMRMLWatchdogNode::GetWatchedNodeIndex: invalid input node");
     return -1;
   }
   int numberOfWatchedNodes = this->GetNumberOfNodeReferences(WATCHED_NODE_REFERENCE_ROLE_NAME);
@@ -304,25 +283,32 @@ int vtkMRMLWatchdogNode::GetNumberOfWatchedNodes()
 }
 
 //----------------------------------------------------------------------------
-const char* vtkMRMLWatchdogNode::GetWatchedNodeDisplayLabel(int watchedNodeIndex)
+const char* vtkMRMLWatchdogNode::GetWatchedNodeWarningMessage(int watchedNodeIndex)
 {
   if(watchedNodeIndex<0 || watchedNodeIndex>=this->Internal->WatchedNodes.size())
   {
-    vtkErrorMacro("vtkMRMLWatchdogNode::GetWatchedNodeDisplayLabel failed: invalid index "<<watchedNodeIndex);
+    vtkErrorMacro("vtkMRMLWatchdogNode::GetWatchedNodeWarningMessage failed: invalid index "<<watchedNodeIndex);
     return NULL;
   }
-  return this->Internal->WatchedNodes[watchedNodeIndex].displayLabel.c_str();
+  return this->Internal->WatchedNodes[watchedNodeIndex].warningMessage.c_str();
 }
 
 //----------------------------------------------------------------------------
-void vtkMRMLWatchdogNode::SetWatchedNodeDisplayLabel(int watchedNodeIndex, const char* displayLabel)
+void vtkMRMLWatchdogNode::SetWatchedNodeWarningMessage(int watchedNodeIndex, const char* warningMessage)
 {
   if(watchedNodeIndex<0 || watchedNodeIndex>=this->Internal->WatchedNodes.size())
   {
-    vtkErrorMacro("vtkMRMLWatchdogNode::SetWatchedNodeDisplayLabel failed: invalid index "<<watchedNodeIndex);
+    vtkErrorMacro("vtkMRMLWatchdogNode::WarningMessage failed: invalid index "<<watchedNodeIndex);
     return;
   }
-  this->Internal->WatchedNodes[watchedNodeIndex].displayLabel = (displayLabel ? displayLabel : "");
+  std::string newMessage = (warningMessage ? warningMessage : "");
+  if (newMessage.compare(this->Internal->WatchedNodes[watchedNodeIndex].warningMessage)==0)
+  {
+    // no change
+    return;
+  }
+  this->Internal->WatchedNodes[watchedNodeIndex].warningMessage = newMessage;
+  this->Modified();
 }
 
 //---------------------------------------------------------------------------- 
@@ -344,7 +330,13 @@ void vtkMRMLWatchdogNode::SetWatchedNodeUpdateTimeToleranceSec(int watchedNodeIn
     vtkErrorMacro("vtkMRMLWatchdogNode::SetWatchedNodeUpdateTimeToleranceSec failed: invalid index "<<watchedNodeIndex);
     return;
   }
+  if (fabs(this->Internal->WatchedNodes[watchedNodeIndex].updateTimeToleranceSec - updateTimeToleranceSec)<0.001)
+  {
+    // no change
+    return;
+  }
   this->Internal->WatchedNodes[watchedNodeIndex].updateTimeToleranceSec = updateTimeToleranceSec;
+  this->Modified();
 }
 
 //----------------------------------------------------------------------------
@@ -388,7 +380,13 @@ void vtkMRMLWatchdogNode::SetWatchedNodePlaySound(int watchedNodeIndex, bool pla
     vtkErrorMacro("vtkMRMLWatchdogNode::SetWatchedNodePlaySound failed: invalid index "<<watchedNodeIndex);
     return;
   }
+  if (this->Internal->WatchedNodes[watchedNodeIndex].playSound == playSound)
+  {
+    // no change
+    return;
+  }
   this->Internal->WatchedNodes[watchedNodeIndex].playSound = playSound;
+  this->Modified();
 }
 
 //---------------------------------------------------------------------------
@@ -421,7 +419,7 @@ void vtkMRMLWatchdogNode::ProcessMRMLEvents ( vtkObject *caller, unsigned long e
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLWatchdogNode::UpdateWatchedNodesStatus()
+void vtkMRMLWatchdogNode::UpdateWatchedNodesStatus(bool &watchedNodeBecomeUpToDateSound, bool &watchedNodeBecomeOutdatedSound)
 {
   bool watchedToolStateModified = false;
   double currentTimeSec = vtkTimerLog::GetUniversalTime();
@@ -434,6 +432,17 @@ void vtkMRMLWatchdogNode::UpdateWatchedNodesStatus()
     {
       it->lastStateUpToDate = upToDate;
       watchedToolStateModified = true;
+      if (it->playSound)
+      {
+        if (upToDate)
+        {
+          watchedNodeBecomeUpToDateSound = true;
+        }
+        else
+        {
+          watchedNodeBecomeOutdatedSound = true;
+        }
+      }
     }
   }
   if (watchedToolStateModified)

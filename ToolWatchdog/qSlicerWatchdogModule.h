@@ -69,6 +69,7 @@ public slots:
   void onNodeAddedEvent(vtkObject*, vtkObject*);
   void onNodeRemovedEvent(vtkObject*, vtkObject*);
   void updateAllWatchdogNodes();
+  void stopSound();
 
 protected:
   QScopedPointer<qSlicerWatchdogModulePrivate> d_ptr;
